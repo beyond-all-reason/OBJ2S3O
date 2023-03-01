@@ -8,6 +8,7 @@ import tkFileDialog
 import math
 import os
 import png
+import argparse
 
 from tooltip import Tooltip
 
@@ -405,11 +406,23 @@ def string2list(input_string):
 	input_string = input_string.rstrip('}')
 	output = input_string.split('} {')
 	return output
+	
+def loadS3O(filename):
+	datafile=open(filename,'rb')
+	data=datafile.read()
+	datafile.close()
+	model=S3O(data)
+	return model
+
+def writeS3O(model,filename):
+	output_file=open(filename,'wb')
+	output_file.write(model.serialize())
+	output_file.close()
+	return model
 
 def S3OtoOBJ(filename,outputfilename,optimize_for_wings3d=True):
 	if '.s3o' in filename.lower():
-		data=open(filename,'rb').read()
-		model=S3O(data)
+		model=loadS3O(filename)
 		model.S3OtoOBJ(outputfilename,optimize_for_wings3d)
 		print '[INFO]',"Succesfully converted", filename,'to',outputfilename
 
@@ -424,59 +437,93 @@ def OBJtoS3O(objfile,transform,outputfilename,a,b,c,d):
 		isobj=True
 		model = S3O(data,isobj)
 		recursively_optimize_pieces(model.root_piece)
-		optimized_data = model.serialize()
-		output_file=open(outputfilename,'wb')
-		output_file.write(optimized_data)
-		output_file.close()
+		writeS3O(model, outputfilename)
 	#	if (self.tex1.get()!='' and self.tex2.get()!=''):
 	#		swaptex(outputfilename, self.tex1.get(),self.tex2.get())
 		print '[INFO]',"Succesfully converted", objfile,'to',outputfilename
 		
 def swaptex(filename,tex1,tex2):
-	datafile=open(filename,'rb')
-	data=datafile.read()
-	model=S3O(data)
+	model=loadS3O(filename)
 	model.texture_paths=[tex1,tex2]
-	datafile.close()
+	writeS3O(model,filename)
 	print '[INFO]','Changed texture to',tex1,tex2
-	output_file=open(filename,'wb')
-	output_file.write(model.serialize())
-	output_file.close()
-	print '[INFO]',"Succesfully optimized", filename
 
 def optimizeS3O(filename):
-	datafile=open(filename,'rb')
-	data=datafile.read()
-	model=S3O(data)
+	model=loadS3O(filename)
 	pre_vertex_count=countvertices(model.root_piece)
 	recursively_optimize_pieces(model.root_piece)
 	optimized_data = model.serialize()
 	datafile.close()
 	print '[INFO]','Number of vertices before optimization:',pre_vertex_count,' after optimization:',countvertices(model.root_piece)
-	output_file=open(filename,'wb')
-	output_file.write(optimized_data)
-	output_file.close()
+	writeS3O(model,filename)
 	#allbins = model.root_piece.recurse_bin_vertex_ao()
 	#print 'bin\t' + '\t'.join(sorted(allbins.keys()))
 
 	#for i in range(0, 256 / 4):
 	#	print '%i\t' % i + '\t'.join(['%04d' % allbins[k][i] for k in sorted(allbins.keys())])
-
 	print '[INFO]',"Succesfully optimized", filename
+	
+def mergeS30(filename, outfilename):
+	model=loadS3O(filename)
+	model.root_piece.mergechildren()
+	writeS3O(model,outfilename)
+	print '[INFO]',"Merged", outfilename	
+	
+def scaleS30(filename, outfilename, scale = 1.0):
+	model=loadS3O(filename)
+	model.root_piece.rescale(scale)
+	writeS3O(model,outfilename)
+	print '[INFO]',"Scaled", outfilename,'to', scale
+		
+def adds3o(filename, addfilename, outfilename):
+	model=loadS3O(filename)
+	model2=loadS3O(addfilename)
+	model.root_piece.children.append(model2.root_piece)
+	writeS3O(model,outfilename)
+	print '[INFO]',"added", addfilename,'to', outfilename
+
+def splits3o(filename, outfilename, piecelist):
+	model=loadS3O(filename)
+	
+	def recursive_piece_removal(piece, piecelist):
+		for child in piece.children:
+			recursive_piece_removal(child, piecelist)
+		if piece.name not in piecelist:
+			piece.vertices = []
+			piece.indices = []
+		
+	recursive_piece_removal(model.root_piece, piecelist)
+	writeS3O(model,outfilename)
+	print '[INFO]',"Removed pieces", outfilename,'', piecelist
+
+def recalccenterradiusS30(filename, outfilename):
+	model=loadS3O(filename)
+	model.root_piece.mergechildren()
+	
+	bbmin = [0,0,0]
+	bbmax = [0,0,0]
+	for i in range(3):
+		for v in model.root_piece.vertices:
+			bbmin[i] = min(bbmin[i], v[0][i] + model.root_piece.parent_offset[i])
+			bbmax[i] = max(bbmax[i], v[0][i] + model.root_piece.parent_offset[i])
+	print (bbmax, bbmin, len(model.root_piece.vertices))
+
+	model=loadS3O(filename)
+	model.height = bbmax[1]
+	model.collision_radius = max(max(bbmax[0], -1 * bbmin[0]), max(bbmax[2], -1 * bbmin[2]))
+	model.midpoint = (0, min(model.collision_radius/2, bbmax[1]/2),0)
+
+	writeS3O(model,outfilename)
+	print '[INFO]',"Recalced center radius", outfilename,'to height = ', model.height, 'radius = ',model.collision_radius, ' midpoint = ', model.midpoint
 
 def printAOS3O(filename):
-	datafile = open(filename, 'rb')
-	data = datafile.read()
-	datafile.close()
-	model = S3O(data)
+	model=loadS3O(filename)
 	print '[INFO]', 'AO data in:',filename
 	model.root_piece.recurse_bin_vertex_ao()
 	print '[INFO]', "Printing done for", filename
 
 def clearAOS3O(filename,piecelist = [], zerolevel = 200):
-	datafile = open(filename, 'rb')
-	data = datafile.read()
-	model = S3O(data)
+	model=loadS3O(filename)
 	pre_vertex_count = countvertices(model.root_piece)
 	print '[INFO]', 'AO data before clearing:'
 	model.root_piece.recurse_bin_vertex_ao()
@@ -485,12 +532,11 @@ def clearAOS3O(filename,piecelist = [], zerolevel = 200):
 	model.root_piece.recurse_bin_vertex_ao(piecelist = piecelist)
 	recursively_optimize_pieces(model.root_piece)
 	optimized_data = model.serialize()
-	datafile.close()
+
 	print '[INFO]', 'Number of vertices before optimization:', pre_vertex_count, ' after optimization:', countvertices(
 		model.root_piece)
-	output_file = open(filename, 'wb')
-	output_file.write(optimized_data)
-	output_file.close()
+
+	writeS3O(model,filename)
 	print '[INFO]', "Succesfully optimized", filename
 
 def delimit(str,a,b):
@@ -501,8 +547,7 @@ def bakeAOPlateS3O(filepath, xnormalpath, sizex = 5, sizez = 5, resolution= 128)
 	print '=========================working on', basename, '==============================='
 	# check if the unit has a unitdef and if that unit is not a flying unit.
 	# also, make bigger plates for buildings :)
-
-	mys3o = S3O(open(filepath, 'rb').read())
+	mys3o = loadS3O(filepath)
 	objfile = basename + '_AOplate.obj'
 	pngfile = basename + "_ao.png"
 	pngfilexnormal = basename + "_ao_occlusion.png"
@@ -954,6 +999,84 @@ for file in os.listdir(basedir):
 		outf.close()
 exit(1)
 '''
-root = Tk()
-app = App(root)
-root.mainloop()
+
+
+
+parser = argparse.ArgumentParser()
+parser.add_argument('-i', '--input', type = str, help = 'The file to work on (s3o or obj)')
+parser.add_argument('-o', '--output', type = str, help = 'The name of the output file. If not specified, modification operations are done in-place')
+
+parser.add_argument('--s3otoobj', action = "store_true" , help =  'Convert a file from s3o to obj' ) #...
+parser.add_argument('--wings3d', action = "store_true" , help =  'Optimize smoothing groups for Wings3D OBJ output' ) #...
+
+parser.add_argument('--objtos3o', action = "store_true" , help =  'Convert a file from obj to s3o' ) #...
+parser.add_argument('--transformuv', nargs = 4, type = float, help =  'Transform UV space', default = [1,0,1,0]) 
+
+parser.add_argument('--swaptex', nargs = 2, type=str, help =  'Specify the two textures for s3o' ) #...
+
+parser.add_argument('--optimize', action = "store_true" , help =  'Convert a file from obj to s3o' ) #...
+
+parser.add_argument('--printao', action = "store_true" , help =  'print the AO information for an s3o' ) #...
+
+parser.add_argument('--clearao', action = "store_true" , help =  'print the AO information for an s3o' ) 
+parser.add_argument('--piecelist', nargs = '+', type = str, help =  'Piece list to clear for --clearao, and piece list to explode for  --bakevertexao', default = []) 
+parser.add_argument('--zerolevelao', type = int, help = 'Specify zero level for AO', default = 200)
+
+parser.add_argument('--bakeaoplate', action = "store_true", help = 'Bake an AO plate for the model') 
+parser.add_argument('--aoplatesizex', type = int, help = 'AO plate size X in footprint units', default = 5)
+parser.add_argument('--aoplatesizez', type = int, help = 'AO plate size Z in footprint units', default = 5)
+parser.add_argument('--aoplateresolution', type = int, help = 'AO plate resolution in pixels', default = 128)
+parser.add_argument('--xnormalpath', type = str, help = 'Path to xnormal.exe', default = 'C:\\Program Files\\xNormal\\3.19.3\\x64\\xNormal.exe')
+
+parser.add_argument('--bakevertexao', action = "store_true", help = 'Bake vertex AO for the model') 
+parser.add_argument('--isbuilding', action = "store_true", help = 'Vertex AO. Enable this when baking AO for buildings. This puts a larger than normal groundplate underneath the unit, to make sure the building is only lit from the top hemisphere')
+parser.add_argument('--isflying', action = "store_true", help = 'Vertex AO. Use for aircraft, this remove the groundplate from under the unit, so it can get lit from all directions')
+parser.add_argument('--minclamp', type = float, help = 'Vertex AO. The darkest possible level AO shading will go to. 0 means even the darkes is allowed, 255 means that everything will be full white. 128 is good if you dont want peices to go too dark.', default = 0.0)
+parser.add_argument('--bias', type = float, help = 'Vertex AO. Add this much to every vertex AO value, positive values brighten, negative values darken. Sane range [-255;255] .', default = 0.0)
+parser.add_argument('--gain', type = float, help = 'Vertex AO.Multiply calculated AO terms with this value. A value of 2.0 would double the brightness of each value, 0.5 would half it. AO_out = min(255, max(clamp, AO_in * bias + gain)).', default = 1.0)
+
+parser.add_argument('--merge', action = "store_true", help = 'merge all pieces in an s3o') 
+parser.add_argument('--scale', type = float, help = 'merge all pieces in an s3o') 
+parser.add_argument('--recenter', action = 'store_true', help = 'recalculate center, midpoint, height') 
+
+parser.add_argument('--adds3o', type = str, help = "Take all the pieces of this file, and add it to the root of input")
+
+parser.add_argument('--splits3o', action = "store_true", help  = "take the piecelist, and split that out into a new s3o")
+
+args = parser.parse_args()
+print (args)
+
+if args.input is None:
+	root = Tk()
+	app = App(root)
+	root.mainloop()
+else:
+	if args.output is None:
+		args.output = args.input
+	if args.s3otoobj:
+		S3OtoOBJ(args.input, args.output, 'wings3d' in args)
+	if args.objtos3o:
+		OBJtoS3O(args.input,1,args.output,args.transformuv[0],args.transformuv[1],args.transformuv[2],args.transformuv[3])
+	if args.adds3o:
+		adds3o(args.input, args.adds3o, args.output)
+	if args.splits3o:
+		splits3o(args.input, args.output, args.piecelist)
+	if args.merge:
+		mergeS30(args.input, args.output)
+	if args.scale:
+		scaleS30(args.input, args.output, args.scale)
+	if args.recenter:
+		recalccenterradiusS30(args.input, args.output)
+	if args.swaptex:
+		swaptex(args.input,args.swaptex[0],args.swaptex[1])
+	if args.optimize:
+		optimize(args.input)
+	if args.printao:
+		printAOS3O(args.input)
+	if args.clearao:
+		clearAOS3O(args.input, args.piecelist, args.zerolevelao)
+	if args.bakeaoplate:
+		bakeAOPlateS3O(args.input, args.xnormalpath, args.aoplatesizex, args.aoplatesizez, args.aoplateresolution)
+	if args.bakevertexao: 
+		bakeAOS3O(args.input, args.xnormalpath, 'isbuilding' in args, 'isflying' in args, len(args.piecelist) > 0, args.minclamp, args.bias, args.gain, args.piecelist)
+		

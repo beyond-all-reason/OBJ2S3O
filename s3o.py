@@ -668,6 +668,8 @@ class S3O(object):
 			self.adjustobjtos3ooffsets(child, curx + piece.parent_offset[0], cury + piece.parent_offset[1],
 									curz + piece.parent_offset[2])
 
+	
+
 	def serialize(self):
 		encoded_texpath1 = self.texture_paths[0] + b'\x00'
 		encoded_texpath2 = self.texture_paths[1] + b'\x00'
@@ -774,7 +776,32 @@ class S3OPiece(object):
 		#	return True
 		#else:
 		#	return False
-
+	
+	def mergechildren(self):
+		for child in self.children:
+			child.mergechildren()
+		
+		newverts = self.vertices
+		newindices = self.indices
+		indexoffset = len(self.vertices)
+		for child in self.children:
+			for v in child.vertices:
+				newverts.append(((v[0][0] + child.parent_offset[0],v[0][1] + child.parent_offset[1], v[0][2] + child.parent_offset[2]),v[1], v[2]))
+			for index in child.indices:
+				newindices.append(index + indexoffset)
+			indexoffset += len(child.vertices)
+			#print (self.name, child.name, indexoffset)
+		self.vertices = newverts
+		self.indices = newindices
+		self.children = []
+	
+	def rescale(self, scale):
+		self.parent_offset = (self.parent_offset[0] * scale, self.parent_offset[1] * scale, self.parent_offset[2] * scale)
+		for i,v in enumerate(self.vertices):
+			self.vertices[i] = ((v[0][0] * scale, v[0][1] * scale,v[0][2] * scale),v[1],v[2])
+		for child in self.children:
+			child.rescale(scale)
+			
 	def recurse_clear_vertex_ao(self,zerolevel=200,piecelist = []):
 		if piecelist == [] or self.name.lower() in piecelist:
 			for i, vertex in enumerate(self.vertices):
