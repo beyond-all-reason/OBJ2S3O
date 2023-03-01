@@ -3,6 +3,8 @@ Tools to convert Spring S3O models to OBJ format and back. Also, for baking Ambi
 
 # GUI usage:
 
+Mash buttons:
+![ui](https://user-images.githubusercontent.com/109391/222241312-54abe98e-2f45-4f7a-ab4a-b2d768cf6cd0.png)
 
 
 # Command line Usage
