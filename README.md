@@ -4,7 +4,7 @@ Tools to convert Spring S3O models to OBJ format and back. Also, for baking Ambi
 # GUI usage:
 
 # Command line Usage
-
+```
 obj2s3o.exe --help
 usage: obj2s3o.exe [-h] [-i INPUT] [-o OUTPUT] [--s3otoobj] [--wings3d]
                    [--objtos3o]
@@ -75,5 +75,5 @@ optional arguments:
   --adds3o ADDS3O       Take all the pieces of this file, and add it to the
                         root of input
   --splits3o            take the piecelist, and split that out into a new s3o
-  
+  ```
   
