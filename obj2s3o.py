@@ -453,7 +453,7 @@ def optimizeS3O(filename):
 	pre_vertex_count=countvertices(model.root_piece)
 	recursively_optimize_pieces(model.root_piece)
 	optimized_data = model.serialize()
-	datafile.close()
+	#datafile.close()
 	print '[INFO]','Number of vertices before optimization:',pre_vertex_count,' after optimization:',countvertices(model.root_piece)
 	writeS3O(model,filename)
 	#allbins = model.root_piece.recurse_bin_vertex_ao()
