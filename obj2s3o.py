@@ -9,6 +9,7 @@ import math
 import os
 import png
 import argparse
+import glob
 
 from tooltip import Tooltip
 
@@ -288,9 +289,9 @@ class App:
 						b=float(self.transformB.get())
 						c=float(self.transformC.get())
 						d=float(self.transformD.get())
-						print '[INFO]','Using an UV space transform U=%.3f * U + %.3f  V=%.3f * V + %.3f'%(a,b,c,d)
+						print ('[INFO]','Using an UV space transform U=%.3f * U + %.3f  V=%.3f * V + %.3f'%(a,b,c,d))
 					except ValueError:
-						print '[WARN]','Failed to parse transformation parameters, ignoring transformation!'
+						print ('[WARN]','Failed to parse transformation parameters, ignoring transformation!')
 						transform=0
 				OBJtoS3O(file, transform,outputfilename,a,b,c,d)
 
@@ -326,7 +327,7 @@ class App:
 		ao_zerolevel = float(self.ao_zerolevel.get())
 		for file in self.s3ofile:
 			if 's3o' in file.lower():
-				print '[INFO]','Clearing AO for',file,'piecelist:',piecelist
+				print ('[INFO]','Clearing AO for',file,'piecelist:',piecelist)
 				clearAOS3O(file, piecelist=piecelist, zerolevel=ao_zerolevel)
 
 	def printaos3o(self):
@@ -338,7 +339,7 @@ class App:
 		for file in self.s3ofile:
 			if 's3o' in file.lower():
 				self.initialdir=file.rpartition('/')[0]
-				print '[INFO]','Clearing AO for',file,'piecelist:',piecelist
+				print ('[INFO]','Clearing AO for',file,'piecelist:',piecelist)
 				printAOS3O(file)
 
 	def swaptex(self):
@@ -424,7 +425,7 @@ def S3OtoOBJ(filename,outputfilename,optimize_for_wings3d=True):
 	if '.s3o' in filename.lower():
 		model=loadS3O(filename)
 		model.S3OtoOBJ(outputfilename,optimize_for_wings3d)
-		print '[INFO]',"Succesfully converted", filename,'to',outputfilename
+		print ('[INFO]',"Succesfully converted", filename,'to',outputfilename)
 
 def OBJtoS3O(objfile,transform,outputfilename,a,b,c,d):
 	if '.obj' in objfile.lower():
@@ -440,13 +441,13 @@ def OBJtoS3O(objfile,transform,outputfilename,a,b,c,d):
 		writeS3O(model, outputfilename)
 	#	if (self.tex1.get()!='' and self.tex2.get()!=''):
 	#		swaptex(outputfilename, self.tex1.get(),self.tex2.get())
-		print '[INFO]',"Succesfully converted", objfile,'to',outputfilename
+		print ('[INFO]',"Succesfully converted", objfile,'to',outputfilename)
 		
 def swaptex(filename,tex1,tex2):
 	model=loadS3O(filename)
 	model.texture_paths=[tex1,tex2]
 	writeS3O(model,filename)
-	print '[INFO]','Changed texture to',tex1,tex2
+	print ('[INFO]','Changed texture to',tex1,tex2)
 
 def optimizeS3O(filename):
 	model=loadS3O(filename)
@@ -454,34 +455,40 @@ def optimizeS3O(filename):
 	recursively_optimize_pieces(model.root_piece)
 	optimized_data = model.serialize()
 	#datafile.close()
-	print '[INFO]','Number of vertices before optimization:',pre_vertex_count,' after optimization:',countvertices(model.root_piece)
+	print ('[INFO]','Number of vertices before optimization:',pre_vertex_count,' after optimization:',countvertices(model.root_piece))
 	writeS3O(model,filename)
 	#allbins = model.root_piece.recurse_bin_vertex_ao()
 	#print 'bin\t' + '\t'.join(sorted(allbins.keys()))
 
 	#for i in range(0, 256 / 4):
 	#	print '%i\t' % i + '\t'.join(['%04d' % allbins[k][i] for k in sorted(allbins.keys())])
-	print '[INFO]',"Succesfully optimized", filename
+	print ('[INFO]',"Succesfully optimized", filename)
 	
 def mergeS30(filename, outfilename):
 	model=loadS3O(filename)
 	model.root_piece.mergechildren()
 	writeS3O(model,outfilename)
-	print '[INFO]',"Merged", outfilename	
+	print ('[INFO]',"Merged", outfilename)
 	
 def scaleS30(filename, outfilename, scale = 1.0):
 	model=loadS3O(filename)
 	model.root_piece.rescale(scale)
 	writeS3O(model,outfilename)
-	print '[INFO]',"Scaled", outfilename,'to', scale
+	print ('[INFO]',"Scaled", outfilename,'to', scale)
 		
 def adds3o(filename, addfilename, outfilename):
 	model=loadS3O(filename)
 	model2=loadS3O(addfilename)
 	model.root_piece.children.append(model2.root_piece)
 	writeS3O(model,outfilename)
-	print '[INFO]',"added", addfilename,'to', outfilename
+	print ('[INFO]',"added", addfilename,'to', outfilename)
 
+def smooths3o(filename, outfilename, smoothangle = 60):
+	model=loadS3O(filename)
+	recalculate_normals(model.root_piece, smoothangle, True)
+	recursively_optimize_pieces(model.root_piece)
+	writeS3O(model,outfilename)
+	print ('[INFO]',"smoothed", filename,'to', outfilename, 'at angle', smoothangle)
 def splits3o(filename, outfilename, piecelist):
 	model=loadS3O(filename)
 	
@@ -494,7 +501,7 @@ def splits3o(filename, outfilename, piecelist):
 		
 	recursive_piece_removal(model.root_piece, piecelist)
 	writeS3O(model,outfilename)
-	print '[INFO]',"Removed pieces", outfilename,'', piecelist
+	print ('[INFO]',"Removed pieces", outfilename,'', piecelist)
 
 def recalccenterradiusS30(filename, outfilename):
 	model=loadS3O(filename)
@@ -514,37 +521,43 @@ def recalccenterradiusS30(filename, outfilename):
 	model.midpoint = (0, min(model.collision_radius/2, bbmax[1]/2),0)
 
 	writeS3O(model,outfilename)
-	print '[INFO]',"Recalced center radius", outfilename,'to height = ', model.height, 'radius = ',model.collision_radius, ' midpoint = ', model.midpoint
-
+	print ('[INFO]',"Recalced center radius", outfilename,'to height = ', model.height, 'radius = ',model.collision_radius, ' midpoint = ', model.midpoint)
+def setradiusheightoffset(filename, outfilename, params):
+	model=loadS3O(filename)
+	model.collision_radius = params[0]
+	model.height = params[1]
+	model.midpoint = (params[2], params[3], params[4])
+	writeS3O(model,outfilename)
+	print ('[INFO]'," setradiusheightoffset ", outfilename,'params:', params)
 def printAOS3O(filename):
 	model=loadS3O(filename)
-	print '[INFO]', 'AO data in:',filename
+	print ('[INFO]', 'AO data in:',filename)
 	model.root_piece.recurse_bin_vertex_ao()
-	print '[INFO]', "Printing done for", filename
+	print ('[INFO]', "Printing done for", filename)
 
 def clearAOS3O(filename,piecelist = [], zerolevel = 200):
 	model=loadS3O(filename)
 	pre_vertex_count = countvertices(model.root_piece)
-	print '[INFO]', 'AO data before clearing:'
+	print ('[INFO]', 'AO data before clearing:')
 	model.root_piece.recurse_bin_vertex_ao()
 	model.root_piece.recurse_clear_vertex_ao(piecelist = piecelist,zerolevel=zerolevel)
-	print '[INFO]', 'AO data after clearing:'
+	print ('[INFO]', 'AO data after clearing:')
 	model.root_piece.recurse_bin_vertex_ao(piecelist = piecelist)
 	recursively_optimize_pieces(model.root_piece)
 	optimized_data = model.serialize()
 
-	print '[INFO]', 'Number of vertices before optimization:', pre_vertex_count, ' after optimization:', countvertices(
-		model.root_piece)
+	print ('[INFO]', 'Number of vertices before optimization:', pre_vertex_count, ' after optimization:', countvertices(
+		model.root_piece))
 
 	writeS3O(model,filename)
-	print '[INFO]', "Succesfully optimized", filename
+	print ('[INFO]', "Succesfully optimized", filename)
 
 def delimit(str,a,b):
 	return str.partition(a)[2].partition(b)[0]
 
 def bakeAOPlateS3O(filepath, xnormalpath, sizex = 5, sizez = 5, resolution= 128):
 	basename = filepath.rpartition('.')[0]
-	print '=========================working on', basename, '==============================='
+	print ('=========================working on', basename, '===============================')
 	# check if the unit has a unitdef and if that unit is not a flying unit.
 	# also, make bigger plates for buildings :)
 	mys3o = loadS3O(filepath)
@@ -597,25 +610,25 @@ def bakeAOPlateS3O(filepath, xnormalpath, sizex = 5, sizez = 5, resolution= 128)
 	for l in xmlln:
 		if 'S:\\models\\!AO\\corfus+plane2.obj' in l:
 			l = l.replace('S:\\models\\!AO\\corfus+plane2.obj', objfile.replace('/','\\'))
-			print 'found .obj in xml', l
+			print ('found .obj in xml', l)
 		if 'S:\\models\\!AO\\corfusplaneuniform.bmp' in l:
 			l = l.replace('S:\\models\\!AO\\corfusplaneuniform.bmp', pngfile.replace('/','\\'))
-			print 'found .bmp in xml' , l
+			print ('found .bmp in xml' , l)
 
 		if 'Width=\"128\" Height=\"128\"' in l:
 			l = l.replace('Width=\"128\" Height=\"128\"', 'Width=\"' + str(resolution) + '\" Height=\"' + str(resolution) + '\"')
-			print l
+			print (l)
 		xmlout.write(l)
 	xmlout.close()
 
 	# --------------------- run xnormal------------------------
-	print "Deleting old bmp file", pngfilexnormal
+	print ("Deleting old bmp file", pngfilexnormal)
 	os.system('del "' + pngfilexnormal.replace('/','\\')+'"')
 	xnormalcmd = '""%s" %s"'%(
 		xnormalpath,
 		xmlfilename,
 	)
-	print "[INFO]",'xNormal command is:',xnormalcmd
+	print ("[INFO]",'xNormal command is:',xnormalcmd)
 	os.system(xnormalcmd)
 	#		#--------------------- Adjust color balance of AO bake ------------------------------------------
 	r = png.Reader(pngfilexnormal)
@@ -623,13 +636,13 @@ def bakeAOPlateS3O(filepath, xnormalpath, sizex = 5, sizez = 5, resolution= 128)
 	rows = list(rows)
 	# list of rows
 	# each row is 4x width size, for RGBA pixels. A subpixel is always 255
-	print pngfilexnormal,info
+	print (pngfilexnormal,info)
 
 	tl=rows[0][0]
 	bl=rows[-1][0]
 	tr=rows[0][-4]
 	br=rows[-1][-4]
-	print tl,bl,tr,br
+	print (tl,bl,tr,br)
 	modifier= min(tl,bl,tr,br)-3
 	modifier=255 -int(modifier)
 	maxdarkness =32
@@ -672,14 +685,14 @@ def bakeAOPlateS3O(filepath, xnormalpath, sizex = 5, sizez = 5, resolution= 128)
 
 	#--------------------- compress to dds------------------------
 	cmd='nvdxt -flip -dxt5 -quality_highest -file "%s"'%(basename+"_aoplane.png")
-	print cmd
+	print (cmd)
 	os.system(cmd)
 
-	print '[INFO]',"Ding, fries are done!"
+	print ('[INFO]',"Ding, fries are done!")
 
 def bakeAOS3O(filepath, xnormalpath, isbuilding = False, isflying = False, explode = False, minclamp = 0.0, bias = 0.0, gain = 1.0,explodepieces = []):
 	basename = filepath.rpartition('.')[0]
-	print '=========================working on', basename, '==============================='
+	print ('=========================working on', basename, '===============================')
 	# check if the unit has a unitdef and if that unit is not a flying unit.
 	# also, make bigger plates for buildings :)
 
@@ -732,7 +745,7 @@ def bakeAOS3O(filepath, xnormalpath, isbuilding = False, isflying = False, explo
 		objfilehandle.write(''.join(objlines))
 		objfilehandle.close()
 	if explode:
-		print 'Separating', basename, 'into pieces for AO bake to avoid excessive darkening on hidden pieces'
+		print ('Separating', basename, 'into pieces for AO bake to avoid excessive darkening on hidden pieces')
 		objfilehandle = open(objfile)
 		objlines = objfilehandle.readlines()
 		objfilehandle.close()
@@ -757,7 +770,7 @@ def bakeAOS3O(filepath, xnormalpath, isbuilding = False, isflying = False, explo
 		objfile,
 		basename+'.ovb'
 	)
-	print "[INFO]",'xNormal command is:',xnormalcmd
+	print ("[INFO]",'xNormal command is:',xnormalcmd)
 	os.system(xnormalcmd)
 
 	aovalues = {}
@@ -770,7 +783,7 @@ def bakeAOS3O(filepath, xnormalpath, isbuilding = False, isflying = False, explo
 		return vertex
 
 
-	print  'Working on:', filepath
+	print  ('Working on:', filepath)
 	vertdata = []
 	aodata = []
 	ovbfile = open(basename+'.ovb').readlines()
@@ -789,7 +802,7 @@ def bakeAOS3O(filepath, xnormalpath, isbuilding = False, isflying = False, explo
 
 	#for aoval in range(256):  # just display it
 		#print aoval, 'O' * int(math.ceil(80 * aobins[aoval] / aomax))
-	print "Number of vertices in each AO bin:",aomax, aobins, 'total=',sum(aobins)
+	print ("Number of vertices in each AO bin:",aomax, aobins, 'total=',sum(aobins))
 	# ao
 
 	olds3ofile = open(basename +  '.s3o', 'rb')
@@ -800,10 +813,10 @@ def bakeAOS3O(filepath, xnormalpath, isbuilding = False, isflying = False, explo
 
 	def recursefoldaoterm(piece, vertex_offset, ignore_these):
 		# global ignorepieces
-		print 'folding ao terms for', piece.name, 'current offset=', vertex_offset
+		print ('folding ao terms for', piece.name, 'current offset=', vertex_offset)
 		ignore = False
 		if piece.name.lower() in ignore_these:
-			print 'ignoring', piece.name
+			print ('ignoring', piece.name)
 			ignore = True
 		folded_vert_indices = []
 		for vertex_i in range(len(piece.indices)):
@@ -825,11 +838,11 @@ def bakeAOS3O(filepath, xnormalpath, isbuilding = False, isflying = False, explo
 				# print newuv, vertex
 				vertex = (vertex[0], vertex[1], newuv)
 				piece.vertices[piece.indices[vertex_i]] = vertex
-		print 'finished folding ao terms for', piece.name, 'unique vertex count=', len(folded_vert_indices)
+		print ('finished folding ao terms for', piece.name, 'unique vertex count=', len(folded_vert_indices))
 		vertex_offset += len(folded_vert_indices)
 		for child in piece.children:
 			childoffset = recursefoldaoterm(child, vertex_offset, ignore_these)
-			print 'in child, vertex offset=', vertex_offset, 'child_offset=', childoffset
+			print ('in child, vertex offset=', vertex_offset, 'child_offset=', childoffset)
 			vertex_offset = childoffset
 		return vertex_offset
 
@@ -839,7 +852,7 @@ def bakeAOS3O(filepath, xnormalpath, isbuilding = False, isflying = False, explo
 	news3ofile = open(basename + '.s3o', 'wb')
 	news3ofile.write(olds3o.serialize())
 	news3ofile.close()
-	print '[INFO]',"Ding, fries are done!"
+	print ('[INFO]',"Ding, fries are done!")
 
 def countvertices(piece):
 	numverts=len(piece.vertices)
@@ -883,7 +896,7 @@ def addemptybase(filename):
 		output_file=open(filename,'wb')
 		output_file.write(model.serialize())
 		output_file.close()
-		print '[INFO]',"Succesfully optimized", filename
+		print ('[INFO]',"Succesfully optimized", filename)
 
 def bend_foliage_normals(model, minu = 0, maxu = 0.5, minv = 0, maxv = 1, blendfactor=0.55, heightpct = 0.15):
 	print ("Bending")
@@ -1003,7 +1016,7 @@ exit(1)
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument('-i', '--input', type = str, help = 'The file to work on (s3o or obj)')
+parser.add_argument('-i', '--input', nargs = '+', type = str, help = 'The file to work on (s3o or obj). Wildcards like * are supported, but specifying multiple files will force obj2s3o to work in-place on the files.')
 parser.add_argument('-o', '--output', type = str, help = 'The name of the output file. If not specified, modification operations are done in-place')
 
 parser.add_argument('--s3otoobj', action = "store_true" , help =  'Convert a file from s3o to obj' ) #...
@@ -1037,12 +1050,15 @@ parser.add_argument('--gain', type = float, help = 'Vertex AO.Multiply calculate
 
 parser.add_argument('--merge', action = "store_true", help = 'merge all pieces in an s3o') 
 parser.add_argument('--scale', type = float, help = 'merge all pieces in an s3o') 
+parser.add_argument('--smooth', type = float, help = 'Recalculate vertex normals and smooth the ones below this angle in degrees') 
 parser.add_argument('--recenter', action = 'store_true', help = 'recalculate center, midpoint, height') 
 
 parser.add_argument('--adds3o', type = str, help = "Take all the pieces of this file, and add it to the root of input")
 
 parser.add_argument('--splits3o', action = "store_true", help  = "take the piecelist, and split that out into a new s3o")
 
+
+parser.add_argument('--setradiusheightoffset', nargs = 5, type = float, help =  'Set radius, height, offsetx,y,z',) 
 args = parser.parse_args()
 print (args)
 
@@ -1051,32 +1067,46 @@ if args.input is None:
 	app = App(root)
 	root.mainloop()
 else:
-	if args.output is None:
-		args.output = args.input
-	if args.s3otoobj:
-		S3OtoOBJ(args.input, args.output, 'wings3d' in args)
-	if args.objtos3o:
-		OBJtoS3O(args.input,1,args.output,args.transformuv[0],args.transformuv[1],args.transformuv[2],args.transformuv[3])
-	if args.adds3o:
-		adds3o(args.input, args.adds3o, args.output)
-	if args.splits3o:
-		splits3o(args.input, args.output, args.piecelist)
-	if args.merge:
-		mergeS30(args.input, args.output)
-	if args.scale:
-		scaleS30(args.input, args.output, args.scale)
-	if args.recenter:
-		recalccenterradiusS30(args.input, args.output)
-	if args.swaptex:
-		swaptex(args.input,args.swaptex[0],args.swaptex[1])
-	if args.optimize:
-		optimize(args.input)
-	if args.printao:
-		printAOS3O(args.input)
-	if args.clearao:
-		clearAOS3O(args.input, args.piecelist, args.zerolevelao)
-	if args.bakeaoplate:
-		bakeAOPlateS3O(args.input, args.xnormalpath, args.aoplatesizex, args.aoplatesizez, args.aoplateresolution)
-	if args.bakevertexao: 
-		bakeAOS3O(args.input, args.xnormalpath, 'isbuilding' in args, 'isflying' in args, len(args.piecelist) > 0, args.minclamp, args.bias, args.gain, args.piecelist)
-		
+	inputfiles = []
+	if len(args.input) > 1 : 
+		inputfiles = args.input
+	else:
+		inputfiles = glob.glob(args.input[0])
+		if not inputfiles:
+			print('File does not exist: ' + args.input)
+			exit(1)
+	print("Working on these files in-place", inputfiles)
+	for inputfile in inputfiles:
+		if args.output is None or len(inputfiles) > 1:
+			args.output = inputfile
+		print ("input file", inputfile, "output file", args.output)
+		if args.s3otoobj:
+			S3OtoOBJ(inputfile, args.output, 'wings3d' in args)
+		if args.objtos3o:
+			OBJtoS3O(inputfile,1,args.output,args.transformuv[0],args.transformuv[1],args.transformuv[2],args.transformuv[3])
+		if args.adds3o:
+			adds3o(inputfile, args.adds3o, args.output)
+		if args.splits3o:
+			splits3o(inputfile, args.output, args.piecelist)
+		if args.merge:
+			mergeS30(inputfile, args.output)
+		if args.smooth:
+			smooths3o(inputfile, args.output, args.smooth)
+		if args.scale:
+			scaleS30(inputfile, args.output, args.scale)
+		if args.recenter:
+			recalccenterradiusS30(inputfile, args.output)
+		if args.swaptex:
+			swaptex(inputfile,args.swaptex[0],args.swaptex[1])
+		if args.optimize:
+			optimize(inputfile)
+		if args.printao:
+			printAOS3O(inputfile)
+		if args.clearao:
+			clearAOS3O(inputfile, args.piecelist, args.zerolevelao)
+		if args.bakeaoplate:
+			bakeAOPlateS3O(inputfile, args.xnormalpath, args.aoplatesizex, args.aoplatesizez, args.aoplateresolution)
+		if args.bakevertexao: 
+			bakeAOS3O(inputfile, args.xnormalpath, 'isbuilding' in args, 'isflying' in args, len(args.piecelist) > 0, args.minclamp, args.bias, args.gain, args.piecelist)
+		if args.setradiusheightoffset:
+			setradiusheightoffset(inputfile, args.output, args.setradiusheightoffset)
