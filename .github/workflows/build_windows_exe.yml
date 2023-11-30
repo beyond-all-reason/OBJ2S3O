@@ -30,7 +30,7 @@ jobs:
         uses: JackMcKew/pyinstaller-action-windows@main
         with:
           path: .
-          spec: obj3s3o.spec
+          spec: obj2s3o.spec
             
       - uses: actions/upload-artifact@v2
         with:
