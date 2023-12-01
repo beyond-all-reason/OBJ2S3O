@@ -52,9 +52,28 @@ def vectormix(a,b,f):
 def normalize(a):
 	l = vectorlength(a)
 	if l < 0.000001:
-		print '[WARN]', 'Normal vector is nearly 0 long, substituting 1 as length',
+		print ('[WARN]', 'Normal vector is nearly 0 long, substituting 1 as length',)
 		l = 1.0
 	return a[0] / l, a[1] / l, a[2] / l
+	
+def vectorangle(a,b):
+	a = normalize(a)
+	b = normalize(b)
+	dot = vectormult(a,b)
+	cosphi = dot[0] + dot[1] + dot[2]
+	angle = math.acos(max(-0.99999,min(0.99999,cosphi)))*90/math.pi
+	#print dot,cosphi, angle
+	return angle
+
+def face_normal(v1, v2, v3):
+	newnormal = vectorcross(
+		vectorminus(v2[0],v1[0]),
+		vectorminus(v3[0], v1[0])
+	)
+	if vectorlength(newnormal) < 0.001:
+		return (0,1,0)
+	else:
+		return normalize(newnormal)
 
 
 def _get_null_terminated_string(data, offset):
@@ -84,7 +103,7 @@ def chunks(l, n):
 def optimize_piece(piece):
 	remap = {}
 	new_indices = []
-	print '[INFO]','Optimizing:',piece.name
+	print ('[INFO]','Optimizing:',piece.name)
 	for index in piece.indices:
 		vertex = piece.vertices[index]
 		if vertex not in remap:
@@ -160,20 +179,72 @@ def fix_zero_normals_piece(piece):
 				nonunitnormals += 1
 				piece.vertices[v_i] = (vertex[0], normalize(vertex[1]), vertex[2])
 	if badnormals > 0:
-		print '[WARN]', 'Bad normals:', badnormals, 'Fixed:', fixednormals
+		print ('[WARN]', 'Bad normals:', badnormals, 'Fixed:', fixednormals)
 		if badnormals != fixednormals:
-			print	'[WARN]', 'NOT ALL ZERO NORMALS fixed!!!!!'  # this isnt possible with above code anyway :/
+			print('[WARN]', 'NOT ALL ZERO NORMALS fixed!!!!!')  # this isnt possible with above code anyway :/
 	if nonunitnormals > 0:
-		print '[WARN]', nonunitnormals, 'fixed to unit length'
+		print ('[WARN]', nonunitnormals, 'fixed to unit length')
 
 
+def recalculate_normals(piece, smoothangle, recursive = False):
+	#build a list of vertices, each with their list of faces:
+	if len(piece.indices) > 4 and piece.primitive_type == 'triangles':
+		#explode vertices uniquely
+		new_vertices = []
+		new_indices = []
+		for i,vi in enumerate(piece.indices):
+			new_vertices.append(piece.vertices[vi])
+			new_indices.append(i)
+		piece.vertices = new_vertices
+		piece.indices = new_indices
+		
+		matchingvertices = [] # a list of vertex indices mapping other identical pos vertices
+		facespervertex = []
+		for i,v1 in enumerate(piece.vertices):
+			facespervertex.append([])
+			for j, v2 in enumerate(piece.vertices):
+				if vectorlength(vectorminus(v1[0], v2[0])) < 0.05:
+					facespervertex[i].append(j)
+					
+		for i,v1 in enumerate(piece.vertices):
+			if len(facespervertex[i]) > 0 :
+				faceindex = int(math.floor(i/3) *3)
+				mynormal = face_normal(
+							piece.vertices[faceindex + 0],
+							piece.vertices[faceindex + 1],
+							piece.vertices[faceindex + 2]
+							)
+						
+				
+				mixednorm = (0,0,0)
+				for facevertex in facespervertex[i]:
+					#get face:
+					faceindex = int(math.floor(facevertex/3) *3)
+					faceindices = piece.indices[faceindex:faceindex+3]
+					mixednorm = vectoradd(mixednorm, 
+						face_normal(
+							piece.vertices[faceindex + 0],
+							piece.vertices[faceindex + 1],
+							piece.vertices[faceindex + 2]
+							)
+						)
+				mixednorm = normalize(mixednorm)
+				#print(i, len(facespervertex[i]), mixednorm, mynormal)
+				if vectorangle(mynormal, mixednorm) <= smoothangle:
+					piece.vertices[i] = (piece.vertices[i][0], mixednorm, piece.vertices[i][2])
+				else:
+					piece.vertices[i] = (piece.vertices[i][0], mynormal, piece.vertices[i][2])
+	if recursive:
+		for child in piece.children:
+			recalculate_normals(child, smoothangle, recursive)
+	
 # for child in piece.children:
 # fix_zero_normals_piece(child)
 
 
 class S3O(object):
 	def S3OtoOBJ(self, filename, optimize_for_wings3d=True):
-		print "[INFO] Wings3d optimization:", optimize_for_wings3d
+		print ("[INFO] Wings3d optimization:", optimize_for_wings3d)
 		objfile = open(filename, 'w')
 		objfile.write('# Spring Unit export, Created by Beherith mysterme@gmail.com with the help of Muon \n')
 		objfile.write(
@@ -185,8 +256,8 @@ class S3O(object):
 			self.midpoint[2],
 			self.collision_radius,
 			self.height,
-			self.texture_paths[0].replace('\0', ''),
-			self.texture_paths[1].replace('\0', '')
+			self.texture_paths[0].replace(b'\0', b'').decode(),
+			self.texture_paths[1].replace(b'\0', b'').decode()
 		)
 		obj_vertindex = 0
 		obj_normal_uv_index = 0  # obj indexes vertices from 1
@@ -202,14 +273,14 @@ class S3O(object):
 				# if i!=q:
 				# print i,'matches',q
 				return i
-		print '[WARN] No matching vertex for', v, ' not even self!'
+		print ('[WARN] No matching vertex for', v, ' not even self!')
 		return q
 
-	def in_smoothing_group(self, piece, a, b, tolerance,
+	def in_smoothing_group(self, piece, face_a, face_b, tolerance,
 						   step):  # returns wether the two primitives shared a smoothed edge
 		shared = 0
-		for va in range(a, a + step):
-			for vb in range(b, b + step):
+		for va in range(face_a, face_a + step):
+			for vb in range(face_b, face_b + step):
 				v = piece.vertices[piece.indices[va]]
 				v2 = piece.vertices[piece.indices[vb]]
 				if abs(v2[0][0] - v[0][0]) < tolerance and abs(v2[0][1] - v[0][1]) < tolerance and abs(
@@ -218,7 +289,7 @@ class S3O(object):
 									v2[1][2] - v[1][2]) < tolerance:
 						shared += 1
 		if shared >= 3:
-			print '[WARN]', shared, 'shared and normal matching vertices faces', a, b, piece.name
+			print ('[WARN]', shared, 'shared and normal matching vertices faces', face_a, face_b, piece.name)
 		return shared == 2
 
 	def recurseS3OtoOBJ(self, piece, objfile, extraargs, vi, nti, groups, offset,
@@ -229,7 +300,7 @@ class S3O(object):
 
 		if piece.parent != None:
 			parent = piece.parent.name
-			print '[INFO] parentname=', piece.parent.name
+			print ('[INFO] parentname=', piece.parent.name)
 		# objfile.write('o %s,ox=%.2f,oy=%.2f,oz=%.2f,p=%s,%s\n'%(
 		# piece.name,
 		# piece.parent_offset[0],
@@ -247,16 +318,16 @@ class S3O(object):
 			step = 3
 		elif piece.primitive_type == 'quads':
 			step = 4
-		print '[INFO]', piece.name, 'has', piece.primitive_type, step
+		print ('[INFO]', piece.name, 'has', piece.primitive_type, step)
 		if len(piece.indices) >= step and piece.primitive_type != "triangle strips":
 			objfile.write('o %s,ox=%.2f,oy=%.2f,oz=%.2f,p=%s,%s\n' % (
-				piece.name,
+				piece.name.decode(),
 				piece.parent_offset[0],
 				piece.parent_offset[1],
 				piece.parent_offset[2],
-				parent,
+				'' if parent == '' else parent.decode() ,
 				extraargs))
-			print '[INFO]','Piece', piece.name, 'has more than 3 vert indices'
+			print ('[INFO]','Piece', piece.name, 'has more than 3 vert indices')
 			for k in range(0, len(piece.indices), step):  # iterate over faces
 				facestr = 'f'
 				for i in range(step):
@@ -267,9 +338,9 @@ class S3O(object):
 							pass #any comparison of NaN is always false
 						else:
 							v=(v[0],(0.0,0.0,0.0),v[2])
-							print '[WARN]','NAN normal encountered in piece',piece.name,'replacing with 0'
+							print ('[WARN]','NAN normal encountered in piece',piece.name,'replacing with 0')
 					if float('nan') in v[1]:
-						print '[WARN]','NAN normal encountered in piece',piece.name
+						print ('[WARN]','NAN normal encountered in piece',piece.name)
 					if optimize_for_wings3d:
 						closest = self.closest_vertex(piece.vertices, piece.indices[k + i], 0.002)
 						if closest not in hash:
@@ -326,7 +397,7 @@ class S3O(object):
 									#	f2], 'resolving with merge!'
 									greater = max(faces[f2], faces[f1])
 									lesser = min(faces[f2], faces[f1])
-									for faceindex in faces.iterkeys():
+									for faceindex in faces.keys():
 										if faces[faceindex] == greater:
 											faces[faceindex] = lesser
 										elif faces[faceindex] > greater:
@@ -346,7 +417,7 @@ class S3O(object):
 							# it is in one smoothing group.
 							# does it work for any 1
 			groupids = set(faces.values())
-			print '[INFO]', 'Sets of smoothing groups in piece', piece.name, 'are', groupids, groups
+			print ('[INFO]', 'Sets of smoothing groups in piece', piece.name, 'are', groupids, groups)
 
 			nonsmooth_faces = False
 			for l in range(len(fdata_obj)):
@@ -362,22 +433,22 @@ class S3O(object):
 				for l in range(len(fdata_obj)):
 					if l in faces and faces[l] == k:
 						objfile.write(fdata_obj[l])
-			print '[INFO]', 'Optimized vertex count=', vcount, 'unoptimized count=', nti - oldnti
+			print ('[INFO]', 'Optimized vertex count=', vcount, 'unoptimized count=', nti - oldnti)
 		elif piece.primitive_type == "triangle strips":
-			print '[WARN]', piece.name, 'has a triangle strip type, this is unsupported by this application, skipping piece!'
+			print ('[WARN]', piece.name, 'has a triangle strip type, this is unsupported by this application, skipping piece!')
 		else:
 			if not optimize_for_wings3d:
-				print '[WARN]', 'Skipping empty emit piece', piece.name, 'because wings3d optimization is off!'
+				print ('[WARN]', 'Skipping empty emit piece', piece.name, 'because wings3d optimization is off!')
 			else:
-				print '[INFO]', 'Empty piece', piece.name, 'writing placeholder face with primitive type',\
-					piece.primitive_type, '#vertices=', len(piece.vertices), '#indices=', len(piece.indices)
+				print ('[INFO]', 'Empty piece', piece.name, 'writing placeholder face with primitive type',\
+					piece.primitive_type, '#vertices=', len(piece.vertices), '#indices=', len(piece.indices))
 				objfile.write('o %s,ox=%.2f,oy=%.2f,oz=%.2f,p=%s,%s,e=%i\n' % (
-					piece.name,
+					piece.name.decode(),
 					piece.parent_offset[0],
 					piece.parent_offset[1],
 					piece.parent_offset[2],
-					parent,
-					extraargs,
+					'' if parent == '' else parent.decode(),
+					'' if extraargs=='' else extraargs.decode(),
 					len(piece.vertices)))
 				if len(piece.vertices) == 0:
 					objfile.write('v %f %f %f\n' % (
@@ -394,9 +465,9 @@ class S3O(object):
 					objfile.write('f %i/1/1 %i/2/2 %i/3/3\n' % (vi + 1, vi + 2, vi + 3))
 					vcount += 3
 				elif len(piece.vertices) == 1:
-					print '[INFO]', 'Emit vertices:', piece.vertices, 'offset:  %f %f %f\n' % (
+					print ('[INFO]', 'Emit vertices:', piece.vertices, 'offset:  %f %f %f\n' % (
 						offset[0] + piece.parent_offset[0], offset[1] + piece.parent_offset[1],
-						offset[2] + piece.parent_offset[2])
+						offset[2] + piece.parent_offset[2]))
 					v = piece.vertices[0]
 					objfile.write('v %f %f %f\n' % (
 						offset[0] + piece.parent_offset[0], offset[1] + piece.parent_offset[1],
@@ -412,9 +483,9 @@ class S3O(object):
 					objfile.write('f %i/1/1 %i/2/2 %i/3/3\n' % (vi + 1, vi + 2, vi + 3))
 					vcount += 3
 				elif len(piece.vertices) == 2:
-					print '[INFO]', 'Emit vertices:', piece.vertices, 'offset:  %f %f %f\n' % (
+					print ('[INFO]', 'Emit vertices:', piece.vertices, 'offset:  %f %f %f\n' % (
 						offset[0] + piece.parent_offset[0], offset[1] + piece.parent_offset[1],
-						offset[2] + piece.parent_offset[2])
+						offset[2] + piece.parent_offset[2]))
 					v = piece.vertices[0]
 					objfile.write('v %f %f %f\n' % (
 						v[0][0] + offset[0] + piece.parent_offset[0], v[0][1] + offset[1] + piece.parent_offset[1],
@@ -433,7 +504,7 @@ class S3O(object):
 					objfile.write('f %i/1/1 %i/2/2 %i/3/3\n' % (vi + 1, vi + 2, vi + 3))
 					vcount += 3
 				else:
-					print '[ERROR]', 'Piece', piece.name, ': failed to write as it looks invalid'
+					print ('[ERROR]', 'Piece', piece.name, ': failed to write as it looks invalid')
 				# print 'empty piece',piece.name,'writing placeholder face with primitive type',piece.primitive_type
 		vi = vi + vcount
 		for child in piece.children:
@@ -466,10 +537,10 @@ class S3O(object):
 			self.collision_radius = 0
 			self.height = 0
 			self.midpoint = [0, 0, 0]
-			self.texture_paths = ['Arm_color.dds' + b'\x00', 'Arm_other.dds' + b'\x00']
+			self.texture_paths = [b"".join([b'Arm_color.dds' , b'\x00']), b"".join([b'Arm_other.dds' , b'\x00'])]
 			self.root_piece = S3OPiece('', (0, 0, 0))
 			self.root_piece.parent = None
-			self.root_piece.name = 'empty_root_piece' + b'\x00'
+			self.root_piece.name = b"".join([b'empty_root_piece' , b'\x00'])
 			self.root_piece.primitive_type = 'triangles'  # triangles
 			self.root_piece.parent_offset = (0, 0, 0)
 			self.root_piece.vertices = []
@@ -497,9 +568,9 @@ class S3O(object):
 							try:
 								kv = p.partition('=')
 								if kv[0] == 't1':
-									self.texture_paths[0] = kv[2] + b'\x00'
+									self.texture_paths[0] = b"".join([bytes(kv[2],'utf-8') , b'\x00'])
 								if kv[0] == 't2':
-									self.texture_paths[1] = kv[2] + b'\x00'
+									self.texture_paths[1] = b"".join([bytes(kv[2],'utf-8') , b'\x00'])
 								if kv[0] == 'h':
 									self.height = float(kv[2])
 								if kv[0] == 'r':
@@ -519,13 +590,13 @@ class S3O(object):
 								if kv[0] == 'e':
 									emittype = int(kv[2])
 								if kv[0] == 'p':
-									piece.parent = kv[2] + b'\x00'
+									piece.parent = b"".join([bytes(kv[2],'utf-8') , b'\x00'])
 								# print '[INFO]', kv
 							except ValueError:
-								print '[ERROR]', 'Failed to parse parameter', p, 'in', objfile[i]
-					piece.name = objfile[i].partition(' ')[2].strip().partition(',')[0][0:20] + b'\x00'
+								print ('[ERROR]', 'Failed to parse parameter', p, 'in', objfile[i])
+					piece.name = b"".join([bytes(objfile[i].partition(' ')[2].strip().partition(',')[0][0:20],'utf-8') , b'\x00'])
 					# why was I limiting piece names to 10 characters in length?
-					print '[INFO]', 'Piece name =', piece.name
+					print ('[INFO]', 'Piece name =', piece.name)
 					piece.primitive_type = 'triangles'  # tris
 
 					piece.children = []
@@ -536,10 +607,10 @@ class S3O(object):
 					while (i < len(objfile) and objfile[i][0] != 'o'):
 						part = objfile[i].partition(' ')
 						if part[0] == 'v':  # and len(verts)<emittype:
-							v = map(float, part[2].split(' '))
+							v = list(map(float, part[2].split(' ')))
 							verts.append((v[0], v[1], v[2]))
 						elif part[0] == 'vn':  # and len(verts)<emittype:
-							vn = map(float, part[2].split(' '))
+							vn = list(map(float, part[2].split(' ')))
 							lensqr = vn[0] ** 2 + vn[1] ** 2 + vn[2] ** 2
 							if lensqr > 0.0002 and math.fabs(lensqr - 1.0) > 0.001:
 								sqr = math.sqrt(lensqr)
@@ -548,7 +619,7 @@ class S3O(object):
 								vn[2] /= sqr
 							normals.append((vn[0], vn[1], vn[2]))
 						elif part[0] == 'vt':  # and len(verts)<emittype:
-							vt = map(float, part[2].split(' '))
+							vt = list(map(float, part[2].split(' ')))
 							uvs.append((vt[0], vt[1]))
 						elif part[0] == 'f' and emittype == 10000000:
 							# only add faces if its not an emit type primitive( meaning it should have no geometry)
@@ -571,13 +642,15 @@ class S3O(object):
 											v = verts[int(face_index[0]) - 1]  # -1 is needed cause .obj indexes from 1
 											calcheight = max(calcheight, math.ceil(v[1]))
 										except IndexError:
-											print '[ERROR]', 'Indexing error! while converting piece', piece.name
-											print '[ERROR]', objfile[i]
-											print '[ERROR]', 'wanted index:', face_index[0], 'len(verts)=', len(verts)
+											print ('[ERROR]', 'Indexing error! while converting piece', piece.name)
+											print ('[ERROR]', objfile[i])
+											print ('[ERROR]', 'wanted index:', face_index[0], 'len(verts)=', len(verts))
 									if face_index[1] != '':
 										vt = uvs[int(face_index[1]) - 1]
-									if face_index[2] != '':
+									if len(face_index) >= 3 and face_index[2] != '':
 										vn = normals[int(face_index[2]) - 1]
+									else:
+										print ('[WARNING]', 'Face does not have specified vertex normals', objfile[i])
 									if emittype != 10000000:
 										if int(faceindexold) < emittype:
 											v = verts[int(face_index[0]) - 1]
@@ -590,9 +663,9 @@ class S3O(object):
 					if piece.name not in piecedict:
 						piecedict[piece.name] = piece
 					else:
-						piece.name = piece.name.strip() + str(random.random()) + b'\x00'
+						piece.name = b"".join([bytes(piece.name.strip() + str(random.random()),'utf-8') , b'\x00'])
 						piecedict[piece.name] = piece
-					print '[INFO]', 'Found piece', piece.name
+					print ('[INFO]', 'Found piece', piece.name)
 					self.root_piece.children.append(piece)
 				else:
 					i += 1
@@ -610,18 +683,18 @@ class S3O(object):
 			for pieceindex in range(len(self.root_piece.children)):
 				piece = self.root_piece.children[pieceindex]
 				parentname = piece.parent
-				if type(parentname) == type(''):
-					print '[INFO]', piece.name, 'has a parent called:', parentname
+				if type(parentname) == type(b''):
+					print ('[INFO]', piece.name, 'has a parent called:', parentname)
 					if parentname == b'\x00':
 						newroot = piecedict[piece.name]
-						print '[INFO]', 'The new root piece is', piece.name
+						print ('[INFO]', 'The new root piece is', piece.name)
 						hasroot = True
 					elif parentname in piecedict:
-						print '[INFO]', 'Assigning', piece.name, 'to', piece.parent
+						print ('[INFO]', 'Assigning', piece.name, 'to', piece.parent)
 						piecedict[parentname].children.append(piece)
 						piece.parent = piecedict[parentname]
 					else:
-						print '[INFO]', 'Parent name', parentname, 'not in piece dict!', piecedict, 'adding it to the root piece'
+						print ('[INFO]', 'Parent name', parentname, 'not in piece dict!', piecedict, 'adding it to the root piece')
 						newroot.children.append(piece)
 					# elif piece.parent==self.root_piece:
 					# print 'piece',piece.name,'is not in the encoded hierarchy, adding it as a child of root piece:',newroot.name
@@ -633,27 +706,30 @@ class S3O(object):
 			for pieceindex in range(len(self.root_piece.children)):
 				piece = self.root_piece.children[pieceindex]
 				if piece.parent == self.root_piece and piece.parent != newroot:
-					print '[WARN]', 'Piece', piece.name, 'is not in the encoded hierarchy, adding it as a child of root piece:', newroot.name
+					print ('[WARN]', 'Piece', piece.name, 'is not in the encoded hierarchy, adding it as a child of root piece:', newroot.name)
 					piecedict[newroot.name].children.append(piece)
 					piece.parent = piecedict[newroot.name]
 			# now that we have the hiearchy set up right, its time to calculate offsets!
 
 			def recurseprintpieces(p, depth = 0):
-				print '[INFO]',"-"*depth, p.name
+				print ('[INFO]',"-"*depth, p.name)
 				for child in p.children:
 					recurseprintpieces(child, depth=depth+1)
 			recurseprintpieces(newroot)
 
-			print '[INFO]', 'The new root pieces is', newroot
+			print ('[INFO]', 'The new root piece is', newroot)
 
 			recurseprintpieces(self.root_piece)
 			self.root_piece = newroot
 
 			self.adjustobjtos3ooffsets(self.root_piece, 0, 0, 0)
+   
+																																					 
+   
 
 			if warn == 1:
-				print '[WARN]', 'Tne or more faces had more than 3 vertices, so triangulation was used. \
-					This can produce bad results with concave polygons'
+				print ('[WARN]', 'Tne or more faces had more than 3 vertices, so triangulation was used. \
+					This can produce bad results with concave polygons')
 
 	def adjustobjtos3ooffsets(self, piece, curx, cury, curz):
 		# print 'adjusting offsets of',piece.name,': current:',curx,cury,curz,'parent offsets:',piece.parent_offset
@@ -671,6 +747,7 @@ class S3O(object):
 	
 
 	def serialize(self):
+		#encoded_texpath1 = b"".join([bytes(self.texture_paths[0],'utf-8') , b'\x00'])
 		encoded_texpath1 = self.texture_paths[0] + b'\x00'
 		encoded_texpath2 = self.texture_paths[1] + b'\x00'
 
@@ -696,7 +773,7 @@ class S3OPiece(object):
 	# for l in data:
 	# if l[0]=='o':
 
-	def __init__(self, data, offset, parent=None, name = "base"):
+	def __init__(self, data, offset, parent=None, name = b"base"):
 		if data != '':
 			piece = _S3OPiece_struct.unpack_from(data, offset)
 
@@ -746,27 +823,27 @@ class S3OPiece(object):
 		if piecelist == [] or self.name.lower() in piecelist:
 			aobins = {}
 			aovalues = []
-			for i in range(0,256/4):
+			for i in range(0,256//4):
 				aobins[i] = 0
 			for i, vertex in enumerate(self.vertices):
 				#vertex_ao_value = (math.floor(vertex[2][0] * 16384.0) / 16384.0 )* 255.0
 				vertex_ao_value = get_vertex_ao_value_01(vertex[2][0]) * 255.0
 				aovalues.append(vertex_ao_value)
-				aobins[(int(vertex_ao_value)/4)%64] +=1
+				aobins[(int(vertex_ao_value)//4)%64] +=1
 				#print "AO value for piece",self.name,i,vertex_ao_value
 			#for i in range(0, 256/4):
 				#print '%04i %04i'%(i,aobins[i])
 			allbins[self.name] = aobins
 			if len(self.vertices)> 4:
 				meanao = sum(aovalues)/float(len(aovalues))
-				print 'Piece %s has %d vertices, AO range = [%d - %d], AO mean = %d, AO spread = %d'%(
+				print ('Piece %s has %d vertices, AO range = [%d - %d], AO mean = %d, AO spread = %d'%(
 					self.name,
 					len(aovalues),
 					min(aovalues),
 					max(aovalues),
 					meanao,
 					sum([abs(ao - meanao) for ao in aovalues])/len(aovalues)
-				)
+				))
 
 		for child in self.children:
 			child.recurse_bin_vertex_ao(allbins = allbins,piecelist= piecelist)
@@ -813,12 +890,13 @@ class S3OPiece(object):
 				# print newuv, vertex
 				vertex = (vertex[0], vertex[1], newuv)
 				self.vertices[i] = vertex
-			print "[INFO]","Set all vertex ao terms to 200 in piece", self.name,piecelist
+			print ("[INFO]","Set all vertex ao terms to 200 in piece", self.name,piecelist)
 		for child in self.children:
 			child.recurse_clear_vertex_ao(zerolevel=zerolevel,piecelist=piecelist)
 
 	def serialize(self, offset):
 		name_offset = _S3OPiece_struct.size + offset
+		#encoded_name = b"".join(bytes(self.name,'utf-8') , b'\x00')
 		encoded_name = self.name + b'\x00'
 
 		children_offset = name_offset + len(encoded_name)

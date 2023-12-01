@@ -3,8 +3,8 @@
 from s3o import *
 import vertex_cache
 import sys
-from Tkinter import *
-import tkFileDialog
+from tkinter import *
+from tkinter import filedialog as tkFileDialog
 import math
 import os
 import png
@@ -453,7 +453,7 @@ def optimizeS3O(filename):
 	model=loadS3O(filename)
 	pre_vertex_count=countvertices(model.root_piece)
 	recursively_optimize_pieces(model.root_piece)
-	optimized_data = model.serialize()
+	#optimized_data = model.serialize()
 	#datafile.close()
 	print ('[INFO]','Number of vertices before optimization:',pre_vertex_count,' after optimization:',countvertices(model.root_piece))
 	writeS3O(model,filename)
@@ -699,7 +699,7 @@ def bakeAOS3O(filepath, xnormalpath, isbuilding = False, isflying = False, explo
 	mys3o = S3O(open(filepath, 'rb').read())
 	objfile = basename + '_AO.obj'
 	mys3o.S3OtoOBJ(objfile, optimize_for_wings3d=False)
-	print basename, 'flying:', isflying, 'building:', isbuilding
+	print (basename, 'flying:', isflying, 'building:', isbuilding)
 	if not isflying:
 		objfilehandle = open(objfile)
 		objlines = objfilehandle.readlines()
@@ -882,7 +882,7 @@ def add_emit_Triangle_at_origin(filename, piecelist):
 	output_file=open(filename,'wb')
 	output_file.write(model.serialize())
 	output_file.close()
-	print '[INFO]',"Succesfully add_emit_Triangle_at_origin", filename
+	print ('[INFO]',"Succesfully add_emit_Triangle_at_origin", filename)
 
 def addemptybase(filename):
 	datafile=open(filename,'rb')
@@ -1099,7 +1099,7 @@ else:
 		if args.swaptex:
 			swaptex(inputfile,args.swaptex[0],args.swaptex[1])
 		if args.optimize:
-			optimize(inputfile)
+			optimizeS3O(inputfile)
 		if args.printao:
 			printAOS3O(inputfile)
 		if args.clearao:
