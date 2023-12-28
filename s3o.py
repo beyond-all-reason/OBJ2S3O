@@ -663,7 +663,7 @@ class S3O(object):
 					if piece.name not in piecedict:
 						piecedict[piece.name] = piece
 					else:
-						piece.name = b"".join([bytes(piece.name.strip() + str(random.random()),'utf-8').encode() , b'\x00'])
+						piece.name = b"".join([bytes(piece.name.strip() + str(random.random()).encode(),'utf-8') , b'\x00'])
 						piecedict[piece.name] = piece
 					print ('[INFO]', 'Found piece', piece.name)
 					self.root_piece.children.append(piece)
