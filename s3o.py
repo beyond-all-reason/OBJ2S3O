@@ -607,10 +607,10 @@ class S3O(object):
 					while (i < len(objfile) and objfile[i][0] != 'o'):
 						part = objfile[i].partition(' ')
 						if part[0] == 'v':  # and len(verts)<emittype:
-							v = list(map(float, part[2].split(' ')))
+							v = list(map(float, part[2].split()))
 							verts.append((v[0], v[1], v[2]))
 						elif part[0] == 'vn':  # and len(verts)<emittype:
-							vn = list(map(float, part[2].split(' ')))
+							vn = list(map(float, part[2].split()))
 							lensqr = vn[0] ** 2 + vn[1] ** 2 + vn[2] ** 2
 							if lensqr > 0.0002 and math.fabs(lensqr - 1.0) > 0.001:
 								sqr = math.sqrt(lensqr)
@@ -619,11 +619,11 @@ class S3O(object):
 								vn[2] /= sqr
 							normals.append((vn[0], vn[1], vn[2]))
 						elif part[0] == 'vt':  # and len(verts)<emittype:
-							vt = list(map(float, part[2].split(' ')))
+							vt = list(map(float, part[2].split()))
 							uvs.append((vt[0], vt[1]))
 						elif part[0] == 'f' and emittype == 10000000:
 							# only add faces if its not an emit type primitive( meaning it should have no geometry)
-							face = part[2].split(' ')
+							face = part[2].split()
 							if len(face) > 3:
 								warn = 1
 							for triangle in range(len(face) - 2):
@@ -663,11 +663,28 @@ class S3O(object):
 					if piece.name not in piecedict:
 						piecedict[piece.name] = piece
 					else:
-						piece.name = b"".join([bytes(piece.name.strip() + str(random.random()).encode(),'utf-8') , b'\x00'])
+						piece.name = b"".join([bytes(piece.name.strip() + bytes(str(random.random()).encode('utf-8'))), b'\x00'])
 						piecedict[piece.name] = piece
 					print ('[INFO]', 'Found piece', piece.name)
 					self.root_piece.children.append(piece)
+					
 				else:
+					part = objfile[i].partition(' ')
+					if part[0] == 'v':  # and len(verts)<emittype:
+						v = list(map(float, part[2].split())) #  [s in part[2].split(' ') if s!= ' ']
+						verts.append((v[0], v[1], v[2]))
+					elif part[0] == 'vn':  # and len(verts)<emittype:
+						vn = list(map(float, part[2].split() ))
+						lensqr = vn[0] ** 2 + vn[1] ** 2 + vn[2] ** 2
+						if lensqr > 0.0002 and math.fabs(lensqr - 1.0) > 0.001:
+							sqr = math.sqrt(lensqr)
+							vn[0] /= sqr
+							vn[1] /= sqr
+							vn[2] /= sqr
+						normals.append((vn[0], vn[1], vn[2]))
+					elif part[0] == 'vt':  # and len(verts)<emittype:
+						vt = list(map(float, part[2].split() ))
+						uvs.append((vt[0], vt[1]))
 					i += 1
 				if self.height == 0:
 					self.height = calcheight
