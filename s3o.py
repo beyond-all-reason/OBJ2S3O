@@ -448,7 +448,7 @@ class S3O(object):
 					piece.parent_offset[1],
 					piece.parent_offset[2],
 					'' if parent == '' else parent.decode(),
-					'' if extraargs=='' else extraargs.decode(),
+					'' if extraargs=='' else extraargs.encode().decode(),
 					len(piece.vertices)))
 				if len(piece.vertices) == 0:
 					objfile.write('v %f %f %f\n' % (
