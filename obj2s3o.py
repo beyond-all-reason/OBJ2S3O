@@ -445,7 +445,7 @@ def OBJtoS3O(objfile,transform,outputfilename,a,b,c,d):
 		
 def swaptex(filename,tex1,tex2):
 	model=loadS3O(filename)
-	model.texture_paths=[tex1,tex2]
+	model.texture_paths=[bytes(tex1, 'utf-8'),bytes(tex2, 'utf-8')]
 	writeS3O(model,filename)
 	print ('[INFO]','Changed texture to',tex1,tex2)
 
