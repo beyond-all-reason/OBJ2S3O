@@ -475,6 +475,12 @@ def scaleS30(filename, outfilename, scale = 1.0):
 	model.root_piece.rescale(scale)
 	writeS3O(model,outfilename)
 	print ('[INFO]',"Scaled", outfilename,'to', scale)
+
+def swapyzS3O(filename, outfilename):
+	model=loadS3O(filename)
+	model.root_piece.swapyz()
+	writeS3O(model,outfilename)
+	print ('[INFO]',"Swapped YZ of ", outfilename)
 		
 def adds3o(filename, addfilename, outfilename):
 	model=loadS3O(filename)
@@ -934,13 +940,13 @@ def add_emit_Triangle_at_origin(filename, piecelist):
 	output_file.close()
 	print ('[INFO]',"Succesfully add_emit_Triangle_at_origin", filename)
 
-def addemptybase(filename):
+def addemptybase(filename, newbasename = "base"):
 	datafile=open(filename,'rb')
 	data=datafile.read()
 	model=S3O(data)
 	datafile.close()
-	if model.root_piece.name != "base":
-		newbase = S3OPiece("",0,parent = None, name = "base")
+	if model.root_piece.name != newbasename:
+		newbase = S3OPiece("",0,parent = None, name = newbasename)
 		newbase.children.append(model.root_piece)
 		model.root_piece = newbase
 		output_file=open(filename,'wb')
@@ -1099,13 +1105,16 @@ parser.add_argument('--bias', type = float, help = 'Vertex AO. Add this much to 
 parser.add_argument('--gain', type = float, help = 'Vertex AO.Multiply calculated AO terms with this value. A value of 2.0 would double the brightness of each value, 0.5 would half it. AO_out = min(255, max(clamp, AO_in * bias + gain)).', default = 1.0)
 
 parser.add_argument('--merge', action = "store_true", help = 'merge all pieces in an s3o') 
-parser.add_argument('--scale', type = float, help = 'merge all pieces in an s3o') 
+parser.add_argument('--scale', type = float, help = 'scale all pieces in an s3o') 
 parser.add_argument('--smooth', type = float, help = 'Recalculate vertex normals and smooth the ones below this angle in degrees') 
 parser.add_argument('--recenter', action = 'store_true', help = 'recalculate center, midpoint, height') 
+parser.add_argument('--swapyz', action = 'store_true', help = 'swap y and z axes') 
+
 
 parser.add_argument('--adds3o', type = str, help = "Take all the pieces of this file, and add it to the root of input")
 
 parser.add_argument('--splits3o', action = "store_true", help  = "take the piecelist, and split that out into a new s3o")
+parser.add_argument('--newbase', type = str, help = "Add an empty base piece to the model")
 
 
 parser.add_argument('--setradiusheightoffset', nargs = 5, type = float, help =  'Set radius, height, offsetx,y,z',) 
@@ -1144,6 +1153,8 @@ else:
 			smooths3o(inputfile, args.output, args.smooth)
 		if args.scale:
 			scaleS30(inputfile, args.output, args.scale)
+		if args.swapyz:
+			swapyzS3O(inputfile, args.output)
 		if args.recenter:
 			recalccenterradiusS30(inputfile, args.output)
 		if args.swaptex:
@@ -1160,3 +1171,5 @@ else:
 			bakeAOS3O(inputfile, args.xnormalpath, 'isbuilding' in args, 'isflying' in args, len(args.piecelist) > 0, args.minclamp, args.bias, args.gain, args.piecelist)
 		if args.setradiusheightoffset:
 			setradiusheightoffset(inputfile, args.output, args.setradiusheightoffset)
+		if args.newbase:
+			addemptybase(inputfile, bytes(args.newbase, 'utf-8'))

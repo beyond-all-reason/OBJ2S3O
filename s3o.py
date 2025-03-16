@@ -895,6 +895,13 @@ class S3OPiece(object):
 			self.vertices[i] = ((v[0][0] * scale, v[0][1] * scale,v[0][2] * scale),v[1],v[2])
 		for child in self.children:
 			child.rescale(scale)
+	
+	def swapyz(self):
+		for i,v in enumerate(self.vertices):
+			self.vertices[i] = ((v[0][0], v[0][2], v[0][1]),(v[1][0], v[1][2], v[1][1]),v[2])
+		for child in self.children:
+			child.swapyz()
+
 			
 	def recurse_clear_vertex_ao(self,zerolevel=200,piecelist = []):
 		if piecelist == [] or self.name.lower() in piecelist:
