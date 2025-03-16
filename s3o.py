@@ -902,6 +902,11 @@ class S3OPiece(object):
 		for child in self.children:
 			child.swapyz()
 
+	def invertfaces(self):
+		for i in range(0,len(self.indices),3):
+			self.indices[i],self.indices[i+1] = self.indices[i+1],self.indices[i]
+		for child in self.children:
+			child.invertfaces()
 			
 	def recurse_clear_vertex_ao(self,zerolevel=200,piecelist = []):
 		if piecelist == [] or self.name.lower() in piecelist:

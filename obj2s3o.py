@@ -481,6 +481,12 @@ def swapyzS3O(filename, outfilename):
 	model.root_piece.swapyz()
 	writeS3O(model,outfilename)
 	print ('[INFO]',"Swapped YZ of ", outfilename)
+	
+def invertfaces(filename, outfilename):
+	model=loadS3O(filename)
+	model.root_piece.invertfaces()
+	writeS3O(model,outfilename)
+	print ('[INFO]',"Swapped YZ of ", outfilename)
 		
 def adds3o(filename, addfilename, outfilename):
 	model=loadS3O(filename)
@@ -1109,6 +1115,7 @@ parser.add_argument('--scale', type = float, help = 'scale all pieces in an s3o'
 parser.add_argument('--smooth', type = float, help = 'Recalculate vertex normals and smooth the ones below this angle in degrees') 
 parser.add_argument('--recenter', action = 'store_true', help = 'recalculate center, midpoint, height') 
 parser.add_argument('--swapyz', action = 'store_true', help = 'swap y and z axes') 
+parser.add_argument('--invertfaces', action = 'store_true', help = 'invert face winding order') 
 
 
 parser.add_argument('--adds3o', type = str, help = "Take all the pieces of this file, and add it to the root of input")
@@ -1155,6 +1162,8 @@ else:
 			scaleS30(inputfile, args.output, args.scale)
 		if args.swapyz:
 			swapyzS3O(inputfile, args.output)
+		if args.invertfaces:
+			invertfaces(inputfile, args.output)
 		if args.recenter:
 			recalccenterradiusS30(inputfile, args.output)
 		if args.swaptex:
