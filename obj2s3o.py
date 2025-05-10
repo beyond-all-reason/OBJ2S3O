@@ -1030,6 +1030,8 @@ def rebuild_feature_aoplates(workdir, s3okeywords = []):
 						os.system(f'copy /Y {basename}_aoplane.dds feature_aoplates\\{basename}_{platesize}_{platesize}_aoplane.dds')
 
 						break
+# Uncomment the following to rebuild the AO plates for all the _dead_ s3o files in the given directory					
+# rebuild_feature_aoplates('C:/Users/Peti/Documents/my games/Spring/games/Beyond-All-Reason.sdd/objects3d', ["_dead"])
 
 #def swaptex(filename,tex1,tex2):
 chickenlist = """chickena.s3o	chicken_red_l_color.dds	chicken_l_other.png
