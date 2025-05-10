@@ -12,6 +12,7 @@ import argparse
 import glob
 
 from tooltip import Tooltip
+import subprocess
 
 howtoemit=('''const unsigned int count = piece->GetVertexCount();
 
@@ -686,12 +687,18 @@ def bakeAOPlateS3O(filepath, xnormalpath, sizex = 5, sizez = 5, resolution= 128)
 	# --------------------- run xnormal------------------------
 	print ("Deleting old bmp file", pngfilexnormal)
 	os.system('del "' + pngfilexnormal.replace('/','\\')+'"')
-	xnormalcmd = '""%s" %s"'%(
-		xnormalpath,
-		xmlfilename,
-	)
+
+	xnormalcmd = [xnormalpath, xmlfilename]
 	print ("[INFO]",'xNormal command is:',xnormalcmd)
-	os.system(xnormalcmd)
+	process = subprocess.Popen(xnormalcmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+	stdout, stderr = process.communicate()
+
+	print("[INFO] xNormal stdout:")
+	print(stdout.decode())
+
+	print("[INFO] xNormal stderr:")
+	print(stderr.decode())
+	process.wait()
 	#		#--------------------- Adjust color balance of AO bake ------------------------------------------
 	r = png.Reader(pngfilexnormal)
 	w,h,rows,info= r.read()
