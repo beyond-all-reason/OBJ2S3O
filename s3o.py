@@ -888,6 +888,33 @@ class S3OPiece(object):
 		self.vertices = newverts
 		self.indices = newindices
 		self.children = []
+
+	def recursively_get_bounding_box(self, minx, miny, minz, maxx, maxy, maxz, offset=(0, 0, 0)):
+		for i in range(len(self.vertices)):
+			v = self.vertices[i][0]
+			adjusted_v = (v[0] + offset[0], v[1] + offset[1], v[2] + offset[2])
+			if adjusted_v[0] < minx:
+				minx = adjusted_v[0]
+			if adjusted_v[1] < miny:
+				miny = adjusted_v[1]
+			if adjusted_v[2] < minz:
+				minz = adjusted_v[2]
+			if adjusted_v[0] > maxx:
+				maxx = adjusted_v[0]
+			if adjusted_v[1] > maxy:
+				maxy = adjusted_v[1]
+			if adjusted_v[2] > maxz:
+				maxz = adjusted_v[2]
+		for child in self.children:
+			child_offset = (
+				offset[0] + child.parent_offset[0],
+				offset[1] + child.parent_offset[1],
+				offset[2] + child.parent_offset[2]
+			)
+			minx, miny, minz, maxx, maxy, maxz = child.recursively_get_bounding_box(
+				minx, miny, minz, maxx, maxy, maxz, child_offset
+			)
+		return minx, miny, minz, maxx, maxy, maxz
 	
 	def rescale(self, scale):
 		self.parent_offset = (self.parent_offset[0] * scale, self.parent_offset[1] * scale, self.parent_offset[2] * scale)
