@@ -753,7 +753,7 @@ def bakeAOPlateS3O(filepath, xnormalpath, sizex = 5, sizez = 5, resolution= 128)
 
 
 	#--------------------- compress to dds------------------------
-	cmd='nvdxt -flip -dxt5 -quality_highest -file "%s"'%(basename+"_aoplane.png")
+	cmd='nvdxt -flip -dxt5 -quality_highest -overwrite -file "%s"'%(basename+"_aoplane.png")
 	print (cmd)
 	os.system(cmd)
 
@@ -996,7 +996,40 @@ def bend_foliage_normals(model, minu = 0, maxu = 0.5, minv = 0, maxv = 1, blendf
 	recursively_optimize_pieces(model.root_piece)
 	return model
 
+def rebuild_feature_aoplates(workdir, s3okeywords = []):
+	# rebuilds the AO plates for all s3o files in workdir
+	# s3okeywords is a list of keywords to search for in the s3o filenames
+	# xnormalpath is the path to the xnormal executable
+	xnormalpath = 'C:\\Program Files\\xNormal\\3.19.3\\x64\\xNormal.exe'
+	os.makedirs('feature_aoplates', exist_ok=True)	
+	for root, dirs, files in os.walk(workdir):
+		for file in files:
+			if file.endswith('.s3o'):
+				for keyword in s3okeywords:
+					if keyword in file:
+						print ('[INFO]',"Found", file)
+						#load the s3o and calculate its size for the AO plate:
+						datafile=open(os.path.join(root, file),'rb')
+						data=datafile.read()
+						model=S3O(data)
+						datafile.close()
+						minx, miny, minz, maxx, maxy, maxz = model.root_piece.recursively_get_bounding_box(0,0,0,0,0,0)
+						print ('[INFO]',"Bounding box:", minx, minz, maxx,  maxz)
 
+						# whats the X and Z size of the model? 
+						bbsize = max(maxx,  maxz, -minx, -minz)
+						platesize = math.ceil((8.0 + bbsize)/8.0)
+						rez = (128 if platesize >= 6 else 64)
+						print ('[INFO]',"AO plate size:", platesize, ' for ' , file, 'rez:', rez)
+						
+
+						bakeAOPlateS3O(os.path.join(root, file), xnormalpath, platesize, platesize, resolution=rez)
+
+						basename = file.rpartition('.')[0]
+
+						os.system(f'copy /Y {basename}_aoplane.dds feature_aoplates\\{basename}_{platesize}_{platesize}_aoplane.dds')
+
+						break
 
 #def swaptex(filename,tex1,tex2):
 chickenlist = """chickena.s3o	chicken_red_l_color.dds	chicken_l_other.png
@@ -1134,6 +1167,7 @@ parser.add_argument('--newbase', type = str, help = "Add an empty base piece to 
 parser.add_argument('--setradiusheightoffset', nargs = 5, type = float, help =  'Set radius, height, offsetx,y,z',) 
 args = parser.parse_args()
 print (args)
+
 
 if args.input is None:
 	root = Tk()
