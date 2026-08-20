@@ -6,6 +6,11 @@ Tools to convert Spring S3O models to OBJ format and back. Also, for baking Ambi
 Mash buttons:
 ![ui](https://user-images.githubusercontent.com/109391/222241312-54abe98e-2f45-4f7a-ab4a-b2d768cf6cd0.png)
 
+The "Convert GLB to S3O" button converts a Blender-exported `.glb`/`.gltf`
+directly to S3O (requires `pip install pygltflib`). The `s3ocompat mode`
+dropdown selects `auto` (read from the glb scene properties, default),
+`true` or `false`.
+
 
 # Command line Usage
 ```
@@ -78,6 +83,51 @@ optional arguments:
   --recenter            recalculate center, midpoint, height
   --adds3o ADDS3O       Take all the pieces of this file, and add it to the
                         root of input
-  --splits3o            take the piecelist, and split that out into a new s3o
-  ```
-  
+   --splits3o            take the piecelist, and split that out into a new s3o
+   ```
+
+# GLB to S3O (glb2s3o.py)
+
+Converts a Blender-exported `.glb` (glTF 2.0 binary) directly to Spring S3O,
+without an OBJ detour. The axis conversion, piece tree layout and scene extra
+parsing mirror the engine's own GLTF import, so the result matches what the
+Recoil engine produces for the same file.
+
+Requires `pygltflib`:
+
+```
+pip install pygltflib
+```
+
+```
+python glb2s3o.py -i model.glb [-o model.s3o] [options]
+
+  -o OUTPUT, --output OUTPUT        Output .s3o file (default: input name with .s3o)
+  --s3ocompat {auto,true,false}     s3ocompat mode (default auto: read from the
+                                    glb scene extras, else false)
+  --tex1 T                          First texture name (default: from scene extras)
+  --tex2 T                          Second texture name (default: from scene extras)
+  --radius R                        Model radius (default: from extras, else bbox)
+  --height H                        Model height (default: from extras, else bbox)
+  --midpos X Y Z                    Midpoint/collision offset (default: from extras,
+                                    else bbox center)
+  --no-optimize                     Skip vertex deduplication
+```
+
+Blender export requirements (see the engine's
+[GLTF import guide](https://recoilengine.org/docs/guides/getting-started/blender-gltf-import/)):
+- The model must be positioned Z-up in Blender
+- Use the Khronos glTF 2.0 exporter in `.glb` format, with `Custom properties`
+  included and `+Y up` **unchecked**
+- Include `UVs`, `Normals`, `Tangents` (tangents are dropped when converting)
+- Scene custom properties (`tex1`, `tex2`, `midpos`, `height`, `radius`,
+  `s3ocompat`, ...) become the S3O header values; missing values fall back to
+  the bounding box
+- Each node becomes an S3O piece, so node names are preserved (the game's lua
+  references pieces, e.g. firepoints, by name)
+- Node rotation/scale is baked into the piece's vertices (S3O pieces only
+  support a translation offset); non-uniform node scale is rejected
+
+Not supported (ignored with a warning if present): materials/images/animations,
+skinned meshes, vertex colors, tangents, non-triangle primitives.
+

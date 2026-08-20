@@ -5,6 +5,7 @@ import vertex_cache
 import sys
 from tkinter import *
 from tkinter import filedialog as tkFileDialog
+from tkinter import messagebox
 import math
 import os
 import png
@@ -53,6 +54,7 @@ class App:
 		master.title('OBJ <--> S3O - By Beherith - Thanks to Muon\'s wonderful s3o library!')
 		frame = Frame(master)
 		objtos3oframe = Frame(master, bd=1, relief = SUNKEN)
+		glbtos3oframe = Frame(master, bd=3, relief = SUNKEN)
 		s3otoobjframe = Frame(master, bd=3, relief = SUNKEN)
 		opts3oframe   = Frame(master, bd=3, relief = SUNKEN)
 
@@ -67,6 +69,7 @@ class App:
 
 		frame.pack()
 		objtos3oframe.pack(side=TOP,fill=X)
+		glbtos3oframe.pack(side=TOP,fill=X)
 		s3otoobjframe.pack(side=TOP,fill=X)
 		opts3oframe.pack(side=TOP,fill=X)
 		clearaoframe.pack(side=TOP,fill=X)
@@ -215,6 +218,22 @@ class App:
 		openobjbutton.pack(side=LEFT)
 		Tooltip(openobjbutton, text = "Choose any mymodel.OBJ file(s), and convert them into mymodel.S3O. Each object in an OBJ file will be a separate piece in the S3O file. If the OBJ file was created by this tool, and the object names were left intact, you will retain all piece hiearchy and origins information.")
 
+		openGLBbutton = Button(glbtos3oframe , text='Convert GLB to S3O', command=self.openGLB)
+		openGLBbutton.pack(side=LEFT)
+		Tooltip(openGLBbutton, text = "Choose a mymodel.GLB or mymodel.GLTF file(s) exported from Blender (Z-up, '+Y up' unchecked), and convert them into mymodel.S3O. Each node becomes a piece, with node rotation and scale baked into the geometry. The S3O header (textures, radius, height, midpoint, s3ocompat) is read from the glb scene custom properties, or from the bounding box when missing. Requires pygltflib (pip install pygltflib).", wraplength=400)
+
+		Label(glbtos3oframe, text='s3ocompat mode:').pack(side=LEFT)
+		self.s3ocompat_mode = StringVar()
+		self.s3ocompat_mode.set('auto')
+		s3ocompatmodeoption = OptionMenu(glbtos3oframe, self.s3ocompat_mode, 'auto', 'true', 'false')
+		s3ocompatmodeoption.pack(side=LEFT)
+		Tooltip(s3ocompatmodeoption, text = "auto (default): use the 's3ocompat' value from the glb scene custom properties, if present. true: transforms the model as (-x, z, y). false: transforms it as (x, z, -y).", wraplength=300)
+
+		self.promptglbfilename = IntVar()
+		promptglbfilenamecheckbutton = Checkbutton(glbtos3oframe, text='Prompt output filename', variable=self.promptglbfilename)
+		promptglbfilenamecheckbutton.pack(side=LEFT)
+		Tooltip(promptglbfilenamecheckbutton, text = "Allows you to choose what name you want to save your S3O file as.")
+
 		prompts3ofilenamecheckbutton = Checkbutton(objtos3oframe,text='Prompt output filename', variable=self.prompts3ofilename)
 		prompts3ofilenamecheckbutton.pack(side=LEFT)
 		Tooltip(prompts3ofilenamecheckbutton,text = "Allows you to choose what name you want to save your S3O file as.")
@@ -295,6 +314,35 @@ class App:
 						print ('[WARN]','Failed to parse transformation parameters, ignoring transformation!')
 						transform=0
 				OBJtoS3O(file, transform,outputfilename,a,b,c,d)
+
+	def openGLB(self):
+		try:
+			import glb2s3o
+		except ImportError as e:
+			print ('[ERROR]','failed to load glb2s3o module:', e)
+			messagebox.showerror('GLB to S3O', 'Missing dependency for GLTF support.\nInstall it with: pip install pygltflib')
+			return
+		selected = tkFileDialog.askopenfilename(initialdir= self.initialdir, filetypes = [('glTF files','*.glb *.gltf'),('Any file','*')], multiple = True)
+		if isinstance(selected, (list, tuple)):
+			self.glbfile = list(selected)
+		elif selected:
+			self.glbfile = [selected]
+		else:
+			return
+		for file in self.glbfile:
+			if 'glb' in file.lower() or 'gltf' in file.lower():
+				self.initialdir=os.path.dirname(file)
+				if self.promptglbfilename.get()==1:
+					outputfilename=tkFileDialog.asksaveasfilename(initialdir= self.initialdir,filetypes = [('Spring Model file (S3O)','*.s3o'),('Any file','*')])
+					if '.s3o' not in outputfilename.lower():
+						outputfilename+='.s3o'
+				else:
+					outputfilename=os.path.splitext(file)[0]+'.s3o'
+				try:
+					glb2s3o.convert_glb(file, outputfilename, self.s3ocompat_mode.get())
+				except Exception as e:
+					print ('[ERROR]','failed to convert', file,':', e)
+					messagebox.showerror('GLB to S3O', 'Failed to convert %s:\n%s' % (file, e))
 
 	def opens3o(self):
 		self.s3ofile = tkFileDialog.askopenfilename(initialdir= self.initialdir,filetypes = [('Spring Model file (S3O)','*.s3o'),('Any file','*')], multiple = True)
