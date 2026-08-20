@@ -1,0 +1,2 @@
+setuptools<70
+pygltflib==1.16.5
