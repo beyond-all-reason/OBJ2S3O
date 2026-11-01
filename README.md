@@ -1,6 +1,22 @@
 # OBJ2S3O
 Tools to convert Spring S3O models to OBJ format and back. Also, for baking Ambient Occlusion stuff.
 
+## Inspect an S3O
+
+Use `s3o_info.py` to print the model metadata, texture names, and indented piece
+hierarchy with each piece's vertex count and local offset:
+
+```
+python s3o_info.py path\to\model.s3o
+```
+
+For a standalone parser that reads the binary records directly with
+`struct.unpack` instead of importing `s3o.py`, use:
+
+```
+python s3o_info_struct.py path\to\model.s3o
+```
+
 # GUI usage:
 
 Mash buttons:
