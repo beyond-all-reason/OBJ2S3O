@@ -3,19 +3,31 @@ Tools to convert Spring S3O models to OBJ format and back. Also, for baking Ambi
 
 ## Inspect an S3O
 
-Use `s3o_info.py` to print the model metadata, texture names, and indented piece
-hierarchy with each piece's vertex count and local offset:
+Both inspection scripts emit JSON containing RecoilEngine coordinate/rotation
+conventions, model metadata, texture names, and recursively nested pieces with
+vertex counts, one-line local offsets, and one-line local dimensions. Offsets
+and dimensions use two decimal places; the root `info` value is a single string
+containing the coordinate, rotation, parent-relative offset, and dimension
+conventions. Pieces with no vertices omit `dimensions`, and leaf pieces omit
+the empty `children` list:
 
 ```
 python s3o_info.py path\to\model.s3o
 ```
 
 For a standalone parser that reads the binary records directly with
-`struct.unpack` instead of importing `s3o.py`, use:
+`struct.unpack` instead of importing `s3o.py`, use either `.s3o` or an
+embedded-buffer `.glb` model:
 
 ```
 python s3o_info_struct.py path\to\model.s3o
+python s3o_info_struct.py path\to\model.glb
 ```
+
+For GLB files, the parser also reports the scene name, `s3ocompat` setting,
+scene metadata, and the hierarchy after applying the same axis and node
+transform conventions as the RecoilEngine GLTF importer. It uses only Python's
+standard library; external GLTF buffers are not supported.
 
 # GUI usage:
 

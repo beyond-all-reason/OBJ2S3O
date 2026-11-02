@@ -1,11 +1,30 @@
 #!/usr/bin/env python3
-"""Print useful metadata and the piece tree from a Spring S3O model."""
+"""Write S3O metadata and the piece tree as JSON."""
 
 import argparse
+import json
 import struct
 from pathlib import Path
 
 import s3o
+
+
+RECOIL_INFO = (
+    "RecoilEngine/Spring S3O uses a left-handed coordinate system: "
+    "+X is right (-X left), +Y is up (-Y down), and +Z is forward (-Z backward). "
+    "Piece offsets are translations relative to each piece's parent. "
+    "Local-piece rotations use the RecoilEngine CQuaternion convention in radians "
+    "with Y-X-Z Euler order (yaw, pitch, roll): positive X rotates up toward forward, "
+    "positive Y rotates forward toward right, positive Z rotates right toward up; "
+    "negative X rotates up toward backward, negative Y forward toward left, and "
+    "negative Z right toward down. "
+    "Piece dimensions are the local axis-aligned extents of that piece's own vertices, "
+    "excluding children; X is width, Y height, and Z length; pieces with no vertices "
+    "omit dimensions because their dimensions are trivially zero. "
+    "Sources: RecoilEngine/rts/System/float3.h, "
+    "RecoilEngine/rts/System/Matrix44f.cpp, and "
+    "RecoilEngine/rts/Rendering/Models/3DModelPiece.cpp."
+)
 
 
 def decode_name(value):
@@ -16,38 +35,71 @@ def decode_name(value):
     return str(value)
 
 
-def format_vector(vector):
-    return "({:.6g}, {:.6g}, {:.6g})".format(*vector)
-
-
-def print_piece_tree(piece, depth=0):
-    indent = "  " * depth
+def piece_to_dict(piece):
     name = decode_name(piece.name) or "<unnamed>"
-    print(
-        "{}{} vertices={} offset={}".format(
-            indent, name, len(piece.vertices), format_vector(piece.parent_offset)
-        )
-    )
-    for child in piece.children:
-        print_piece_tree(child, depth + 1)
+    if piece.vertices:
+        mins = list(piece.vertices[0][0])
+        maxs = list(piece.vertices[0][0])
+        for vertex in piece.vertices[1:]:
+            for axis in range(3):
+                mins[axis] = min(mins[axis], vertex[0][axis])
+                maxs[axis] = max(maxs[axis], vertex[0][axis])
+        dimensions = [maxs[axis] - mins[axis] for axis in range(3)]
+    else:
+        dimensions = [0.0, 0.0, 0.0]
+
+    result = {
+        "name": name,
+        "vertices": len(piece.vertices),
+        "offset": list(piece.parent_offset),
+    }
+    if piece.vertices:
+        result["dimensions"] = dimensions
+    if piece.children:
+        result["children"] = [piece_to_dict(child) for child in piece.children]
+    return result
 
 
-def print_model_info(filename, model):
-    print("Model: {}".format(filename))
-    print("Radius: {:.6g}".format(model.collision_radius))
-    print("Midpoint: {}".format(format_vector(model.midpoint)))
-    print("Height: {:.6g}".format(model.height))
-    print("Textures:")
-    for index, texture in enumerate(model.texture_paths, start=1):
-        texture_name = decode_name(texture) or "<none>"
-        print("  {}: {}".format(index, texture_name))
-    print("Piece hierarchy (local offsets):")
-    print_piece_tree(model.root_piece)
+def model_to_dict(filename, model):
+    return {
+        "info": RECOIL_INFO,
+        "model": str(filename),
+        "radius": model.collision_radius,
+        "midpoint": list(model.midpoint),
+        "height": model.height,
+        "textures": [decode_name(texture) or None for texture in model.texture_paths],
+        "pieces": [piece_to_dict(model.root_piece)],
+    }
+
+
+def compact_vector_fields(json_text):
+    lines = json_text.splitlines()
+    compacted = []
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        stripped = line.strip()
+        if stripped in ('"offset": [', '"dimensions": ['):
+            indent = line[: len(line) - len(line.lstrip())]
+            values = [
+                "{:.2f}".format(float(lines[index + offset].strip().rstrip(",")))
+                for offset in range(1, 4)
+            ]
+            closing = lines[index + 4].strip()
+            comma = "," if closing.endswith(",") else ""
+            compacted.append(
+                "{}{}[{}]{}".format(indent, stripped[:-1], ", ".join(values), comma)
+            )
+            index += 5
+        else:
+            compacted.append(line)
+            index += 1
+    return "\n".join(compacted)
 
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Dump S3O metadata, texture names, and the indented piece hierarchy."
+        description="Write S3O metadata, texture names, and the piece hierarchy as JSON."
     )
     parser.add_argument("input", type=Path, help="S3O file to inspect")
     return parser.parse_args()
@@ -68,7 +120,8 @@ def main():
     except (IndexError, KeyError, ValueError, struct.error) as error:
         raise SystemExit("error: '{}' is not a valid S3O file: {}".format(args.input, error))
 
-    print_model_info(args.input, model)
+    document = json.dumps(model_to_dict(args.input, model), indent=2, allow_nan=False)
+    print(compact_vector_fields(document))
 
 
 if __name__ == "__main__":
