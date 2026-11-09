@@ -17,6 +17,17 @@ python OBJ2S3O/package_glb_ao.py
 From the OBJ2S3O repository root, use `python package_glb_ao.py`. The ZIP is
 written to `dist/bar_glb_ao_v0.1.2.zip` within that repository.
 
+## Blender MCP workflow skill
+
+The reusable [blender-glb-ao skill](skills/blender-glb-ao/SKILL.md) instructs an
+agent with Blender MCP already available to identify the model root in `Unit`,
+bake vertex AO or ground plates, verify the result, and save/export when
+requested. The self-contained `SKILL.md` is included in the add-on ZIP and
+can be read directly by an agent using the available Blender MCP tools.
+
+Example workflow request: “Use the blender-glb-ao skill to bake vertex AO for
+the model in the open scene's Unit collection and show the AO preview.”
+
 ## Existing GLB workflow
 
 1. Set **File Axes** to **Recoil / Blender Z Up** for models exported with `+Y Up` disabled. Use **Standard glTF Y Up** for ordinary glTF files.
