@@ -4,13 +4,18 @@ Standalone Blender **5.2+** add-on for vertex ambient occlusion in **`COLOR_0` a
 
 ## Install
 
-Install `bar_glb_ao_v0.1.0.zip` using **Edit → Preferences → Add-ons → menu → Install from Disk**, then enable **BAR GLB AO Baker**. Open the 3D View sidebar (`N`) and select **GLB AO**.
+Install `bar_glb_ao_v0.1.2.zip` using **Edit → Preferences → Add-ons → menu → Install from Disk**, then enable **BAR GLB AO Baker**. Open the 3D View sidebar (`N`) and select **GLB AO**.
+
+When updating an existing installation, restart Blender after installing the ZIP so all add-on modules reload, then rebake models to apply the new ray minimum and shared-position AO.
 
 To build the ZIP from the workspace root:
 
 ```powershell
 python OBJ2S3O/package_glb_ao.py
 ```
+
+From the OBJ2S3O repository root, use `python package_glb_ao.py`. The ZIP is
+written to `dist/bar_glb_ao_v0.1.2.zip` within that repository.
 
 ## Existing GLB workflow
 
@@ -43,9 +48,19 @@ Vertex alpha represents **visibility/brightness**: `0` is occluded and `1` is un
 alpha = clamp(mean(raw_visibility) * gain + bias, minimum_brightness, 1)
 ```
 
-No automatic per-mesh contrast normalization is applied. Face-corner color data is retained for native models. When an indexed GLB vertex has multiple corner samples, their alpha values are averaged. Shared mesh instances also share/average the resulting AO.
+No automatic per-mesh contrast normalization is applied. Face-corner color data is retained for native models. Shared mesh instances also share/average the resulting AO.
 
-**Ray Distance** and model dimensions use world coordinate units. **Ray Samples** controls the Cycles AO shader's hemisphere samples (1–128). Baking uses a separate CPU Cycles scene, independent of the current render engine, lights, world and source materials.
+### Position identity and seam continuity
+
+Corner samples are averaged per vertex, then vertices within **0.001 mesh-local Blender units** of one another receive shared AO, including duplicate indices at UV seams, hard normals and material boundaries. Identity uses Euclidean distance on source/rest coordinates, independent of normals and UVs. Neighboring spatial cells are checked, so near-identical positions on opposite sides of a cell boundary still match.
+
+Groups are transitive: A close to B and B close to C share one value even if A and C are farther apart. For example, vertices at X = 0, 0.00075 and 0.0015 belong to one group when Y/Z match. A diagonal offset of (0.0008, 0.0008, 0) exceeds the 0.001 distance tolerance and does not directly match.
+
+The shared value is copied to every corresponding corner, so triangle interpolation is continuous across those seams. Position averaging happens after walk/instance averaging and before gain, bias and clamping. Vertex positions, UVs, normals, topology and RGB are preserved. Loose vertices do not contribute AO samples to the average. Distinct meshes/pieces remain independent because their local origins and animation may differ. The tolerance is measured before object transforms, so object scaling does not change which local positions match.
+
+### Ray budget
+
+**Ray Distance** and model dimensions use world coordinate units. **Ray Samples** sets the minimum number of hemisphere rays per vertex corner or plate texel, per pose. The default and minimum are **1024**. The same setting appears in the Vertex AO and Ground AO Plate sections and applies to both operations. Blender caps an AO shader evaluation at 128 rays, so the baker accumulates at least eight Cycles samples, each with 128 AO rays. Higher requests round up to the next multiple of 128 (for example, 1025 requests 1152 rays). Adaptive sampling and time limits are disabled to retain the full budget, including for settings saved by older add-on versions. Baking uses a separate CPU Cycles scene, independent of the current render engine, lights, world and source materials.
 
 ### Walk averaging
 
@@ -70,6 +85,8 @@ Select pieces and use **Mark Explode** to set Boolean object custom property **`
 Click **Bake AO Plate PNG** to bake the current pose without exploded pieces or a vertex-bake ground blocker. Walk averaging applies to vertex AO only.
 
 **Footprint X/Z** are gameplay footprint squares of 16 world units. Zero estimates the footprint from visible model bounds relative to the root origin. Estimates cannot recover gameplay footprint rules; enter explicit values when available. The square plate's full width is `2 * max(footprint_x, footprint_z) * 16`. Resolutions are 64×64 and 128×128.
+
+For example, a 3×3 footprint produces a 96×96 world-unit plate. The companion JSON reports `buildinggrounddecalsizex=6` and `buildinggrounddecalsizey=6`, matching the widget's 16-world-unit scale per decal-size value.
 
 Output consists of:
 
@@ -98,7 +115,15 @@ python -m unittest discover -s OBJ2S3O/tests -v
 & 'C:/Program Files/Blender Foundation/Blender 5.2/blender.exe' -b --factory-startup --python-exit-code 1 --python OBJ2S3O/tests/blender_ao_integration.py
 ```
 
-The Blender suite uses temporary copies of `armanac.glb`; it does not update the reference model. It checks real Cycles bakes, vertex IDs, axes, RGB preservation, source backups, animation averaging, skinning, material restoration, plate orientation and dimensions, authoring export, and failure cleanup.
+If OBJ2S3O is checked out on its own, run `python -m unittest discover -s tests -v` and use `--python tests/blender_ao_integration.py` from its root instead. Adjust the Blender executable path for your installation.
+
+The Blender suite uses temporary copies of `armanac.glb`; it does not update the reference model. It checks real Cycles bakes, the 1024-ray minimum, operator tooltips, 0.001-distance grouping and boundary cases, seam continuity across GLB material primitives, vertex IDs, axes, RGB preservation, source backups, animation averaging, skinning, material restoration, plate orientation and dimensions, authoring export, and failure cleanup.
+
+## Version history
+
+- **0.1.2:** use a 0.001 Euclidean position tolerance, including neighboring spatial cells and transitive groups; preserve shared AO across GLB material primitives.
+- **0.1.1:** enforce a 1024-ray minimum for vertex and plate baking, add complete button tooltips, and average AO at matching vertex positions across normal/UV seams.
+- **0.1.0:** initial standalone Blender 5.2+ add-on with vertex-alpha AO, animation averaging, previews, preserving GLB updates, and RGBA ground plates.
 
 ## Credits and license
 

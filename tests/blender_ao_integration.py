@@ -52,7 +52,45 @@ scene = bpy.context.scene
 bpy.ops.object.select_all(action='SELECT')
 bpy.ops.object.delete(use_global=False)
 settings = scene.glb_ao
+assert settings.samples == 1024
 settings.samples = 8
+assert settings.samples == 1024, 'Ray Samples must enforce the 1024 minimum'
+for requested in (0, 64, 1024, 1025, 4096):
+    rays, samples = baking.sample_budget(requested)
+    assert rays <= 128 and samples * rays >= max(1024, requested)
+    assert samples * rays < max(1024, requested) + 128
+with baking.bake_scene(bpy.context, settings) as (temporary, material, original_scene):
+    ao = next(n for n in material.node_tree.nodes if n.type == 'AMBIENT_OCCLUSION')
+    assert ao.samples * temporary.cycles.samples == 1024
+    assert not temporary.cycles.use_adaptive_sampling
+    assert temporary.cycles.time_limit == 0
+print('PASS: actual Cycles ray budget is at least 1024 for both bake targets')
+for cls in addon.CLASSES:
+    if issubclass(cls, bpy.types.Operator):
+        operator = getattr(bpy.ops.glb_ao, cls.bl_idname.split('.')[1])
+        text = operator.get_rna_type().description
+        assert len(text) > 60 and 'undocumented' not in text.lower(), (cls.__name__, text)
+from types import SimpleNamespace
+explode_descriptions = [addon.GLBAO_OT_explode.description(bpy.context, SimpleNamespace(enabled=enabled))
+                        for enabled in (False, True)]
+preview_descriptions = [addon.GLBAO_OT_preview.description(bpy.context, SimpleNamespace(mode=mode))
+                        for mode in ('AO', 'SHADED', 'RESTORE')]
+assert len(set(explode_descriptions)) == 2 and all(len(text) > 80 for text in explode_descriptions)
+assert len(set(preview_descriptions)) == 3 and all(len(text) > 80 for text in preview_descriptions)
+print('PASS: all panel operators have full tooltips, including each preview/explode mode')
+for positions, should_match in (
+    ([(0, 0, 0), (.000999, 0, 0)], True),
+    ([(0, 0, 0), (.001, 0, 0)], True),
+    ([(0, 0, 0), (.001001, 0, 0)], False),
+    ([(.00099, 0, 0), (.00101, 0, 0)], True),
+    ([(-.00001, 0, 0), (.00001, 0, 0)], True),
+    ([(0, 0, 0), (.0008, .0008, 0)], False),
+):
+    groups = baking.position_groups(np.array(positions, dtype=np.float32))
+    assert (groups[0] == groups[1]) == should_match, (positions, groups)
+chain = baking.position_groups(np.array([(0, 0, 0), (.00075, 0, 0), (.0015, 0, 0)], dtype=np.float32))
+assert len(set(chain)) == 1
+print('PASS: 0.001 position epsilon respects Euclidean distance, cell boundaries and transitive groups')
 settings.distance = 64
 settings.bias = 0
 settings.unit_type = 'FLYING'
@@ -300,6 +338,80 @@ with tempfile.TemporaryDirectory(prefix='bar_ao_integration_') as folder:
         assert abs(plane_bounds[1].x - plane_bounds[0].x - 96) < 0.001
     assert_clean(scene)
     print('PASS: root scaling preserves physical plate dimensions')
+
+    for obj in list(bpy.data.objects):
+        bpy.data.objects.remove(obj, do_unlink=True)
+    # Two material-separated triangles share positions but have independent
+    # vertices, UVs and hard normals. A loose duplicate must not bias AO.
+    root = bpy.data.objects.new('Seam fixture root', None)
+    scene.collection.objects.link(root)
+    settings.root = root
+    settings.walk = False
+    settings.action = None
+    settings.unit_type = 'FLYING'
+    settings.bias = 0
+    mesh = bpy.data.meshes.new('Split seam mesh')
+    mesh.from_pydata([(0, 0, 0), (2, 0, 0), (0, 2, 0),
+                      (.0004, 0, 0), (0, 0, 2), (2.0004, 0, 0), (0, 0, 0)], [], [(0, 1, 2), (3, 4, 5)])
+    mesh.update()
+    obj = bpy.data.objects.new('Split seam target', mesh)
+    scene.collection.objects.link(obj)
+    obj.parent = root
+    uv = mesh.uv_layers.new(name='Split UVs')
+    for loop, coords in zip(uv.data, [(0, 0), (1, 0), (0, 1), (.2, .2), (.5, .9), (.8, .2)]):
+        loop.uv = coords
+    for name in ('Material A', 'Material B'):
+        mesh.materials.append(bpy.data.materials.new(name))
+    mesh.polygons[1].material_index = 1
+    expected = baking.position_visibility(mesh, np.array([0.1, 0.2, 0.3, 0.9, 0.4, 0.8]))
+    assert np.allclose(expected, [.5, .5, .3, .5, .4, .5, .5]), expected
+    before_coords = [v.co[:] for v in mesh.vertices]
+    before_uvs = [v.uv[:] for v in uv.data]
+    before_normals = [n.vector[:] for n in mesh.corner_normals]
+    for domain in ('CORNER', 'POINT'):
+        settings.color_attribute = f'AO_{domain}'
+        color = mesh.color_attributes.new(settings.color_attribute, 'FLOAT_COLOR', domain)
+        rgba = np.ones((len(color.data), 4), dtype=np.float32)
+        rgba[:, :3] = np.arange(len(color.data) * 3).reshape((-1, 3)) / (len(color.data) * 3)
+        color.data.foreach_set('color', rgba.ravel())
+        before_rgb = np.array([c.color[:3] for c in color.data])
+        baking.bake_vertex(bpy.context, settings)
+        rgba = np.array([c.color[:] for c in color.data])
+        assert np.array_equal(rgba[:, :3], before_rgb)
+        if domain == 'CORNER':
+            assert rgba[0, 3] == rgba[3, 3] and rgba[1, 3] == rgba[5, 3], rgba
+        else:
+            assert rgba[0, 3] == rgba[3, 3] == rgba[6, 3] and rgba[1, 3] == rgba[5, 3], rgba
+    assert [v.co[:] for v in mesh.vertices] == before_coords
+    assert [v.uv[:] for v in uv.data] == before_uvs
+    assert [n.vector[:] for n in mesh.corner_normals] == before_normals
+    # Normal Blender export splits the mesh into material primitives. The
+    # values at their shared positions must still match after re-import/save.
+    seam_path = folder / 'seams.glb'
+    assert bpy.ops.glb_ao.export_new(filepath=str(seam_path)) == {'FINISHED'}
+    source = GLB.read(seam_path)
+    root = addon.load_glb(bpy.context, seam_path)
+    assert bpy.ops.glb_ao.bake_vertex() == {'FINISHED'}
+    assert bpy.ops.glb_ao.update_source() == {'FINISHED'}
+    output = GLB.read(seam_path)
+    primitive_count = 0
+    for mi, model_mesh in enumerate(output.document['meshes']):
+        positions, alphas = [], []
+        for primitive in model_mesh['primitives']:
+            primitive_count += 1
+            attributes = primitive['attributes']
+            for position, rgba in zip(output.accessor(attributes['POSITION']), output.accessor(attributes['COLOR_0'])):
+                positions.append(position)
+                alphas.append(rgba[3])
+        groups = baking.position_groups(np.array(positions, dtype=np.float32))
+        assert len(set(groups)) < len(groups), 'Fixture must contain epsilon-matched vertices'
+        for group in set(groups):
+            values = [alpha for alpha, g in zip(alphas, groups) if g == group]
+            assert len(set(values)) == 1, values
+    assert primitive_count == 2
+    assert output.binary.startswith(source.binary)
+    assert_clean(scene)
+    print('PASS: epsilon-matched AO is seamless across UVs, normals, corner/point colors and GLB material primitives')
 
 addon.unregister()
 print('ALL BLENDER AO INTEGRATION CHECKS PASSED')

@@ -2,7 +2,7 @@
 bl_info = {
     'name': 'BAR GLB AO Baker',
     'author': 'Beyond All Reason; based on ChrisFloofyKitsune and Beherith AO tooling',
-    'version': (0, 1, 0),
+    'version': (0, 1, 2),
     'blender': (5, 2, 0),
     'location': 'View3D > Sidebar > GLB AO',
     'description': 'Bake vertex-color alpha AO and ground plates for GLB models',
@@ -34,7 +34,9 @@ class GLBAOSettings(bpy.types.PropertyGroup):
         ('FLYING', 'Flying', 'No ground blocker')], default='MOBILE')
     distance: FloatProperty(name='Ray Distance', default=128, min=0.001, soft_max=512,
                             description='AO radius in model world units')
-    samples: IntProperty(name='Ray Samples', default=64, min=1, max=128)
+    samples: IntProperty(name='Ray Samples', default=1024, min=1024, soft_max=8192, max=1048576,
+                         description='Minimum AO rays per vertex corner or plate texel, per pose; '
+                                     'at least 1024, rounded up to multiples of 128')
     minimum: FloatProperty(name='Minimum Brightness', default=0, min=0, max=1)
     gain: FloatProperty(name='Gain', default=1, min=0, soft_max=2)
     bias: FloatProperty(name='Bias', default=0.05, min=-1, max=1)
@@ -140,6 +142,9 @@ def load_glb(context, filepath, recoil_z_up=True):
 class GLBAO_OT_load(SafeOperator, bpy.types.Operator, ImportHelper):
     bl_idname = 'glb_ao.load'
     bl_label = 'Load GLB for AO'
+    bl_description = ('Import a GLB using File Axes and make it the model root for AO baking. '
+                      'Retain source vertex IDs so baked alpha can be written back with Update Source GLB. '
+                      'The source file is changed only when you save the baked result')
     bl_options = {'REGISTER', 'UNDO'}
     filename_ext = '.glb'
     filter_glob: StringProperty(default='*.glb', options={'HIDDEN'})
@@ -152,6 +157,9 @@ class GLBAO_OT_load(SafeOperator, bpy.types.Operator, ImportHelper):
 class GLBAO_OT_use_active(SafeOperator, bpy.types.Operator):
     bl_idname = 'glb_ao.use_active'
     bl_label = 'Use Active Hierarchy'
+    bl_description = ('Set the active object\'s topmost parent as Model Root. '
+                      'AO operations include visible, render-enabled meshes in that hierarchy; '
+                      'use Export New GLB to save a model authored in Blender')
     bl_options = {'REGISTER', 'UNDO'}
 
     def run(self, context):
@@ -167,8 +175,20 @@ class GLBAO_OT_use_active(SafeOperator, bpy.types.Operator):
 class GLBAO_OT_explode(SafeOperator, bpy.types.Operator):
     bl_idname = 'glb_ao.mark_explode'
     bl_label = 'Set Explode on Selected'
+    bl_description = ('Set or clear the ao_explode custom property on selected objects. '
+                      'Marked objects and their descendants are temporarily separated during vertex AO baking')
     bl_options = {'REGISTER', 'UNDO'}
     enabled: BoolProperty(default=True)
+
+    @classmethod
+    def description(cls, context, properties):
+        if properties.enabled:
+            return ('Set ao_explode=true on selected objects. During vertex AO baking, each marked '
+                    'subtree is moved at least 100 units away on temporary copies to prevent other '
+                    'pieces occluding it. Original transforms and plate baking are unaffected')
+        return ('Set ao_explode=false on selected objects so they remain in place and occlude '
+                'the rest of the model during vertex AO baking. Descendants with their own '
+                'ao_explode property remain independently marked')
 
     def run(self, context):
         for obj in context.selected_objects:
@@ -179,6 +199,10 @@ class GLBAO_OT_explode(SafeOperator, bpy.types.Operator):
 class GLBAO_OT_bake(SafeOperator, bpy.types.Operator):
     bl_idname = 'glb_ao.bake_vertex'
     bl_label = 'Bake Vertex AO'
+    bl_description = ('Bake AO into Color Attribute alpha on the model\'s visible meshes, preserving RGB. '
+                      'Use at least 1024 rays, the selected unit blocker and explode settings; '
+                      'average the walk cycle when enabled and unify AO at positions within 0.001 mesh-local units. '
+                      'Update Source GLB or Export New GLB saves the result to disk')
     bl_options = {'REGISTER', 'UNDO'}
 
     def run(self, context):
@@ -192,7 +216,9 @@ class GLBAO_OT_bake(SafeOperator, bpy.types.Operator):
 class GLBAO_OT_save(SafeOperator, bpy.types.Operator):
     bl_idname = 'glb_ao.update_source'
     bl_label = 'Update Source GLB'
-    bl_description = 'Write color alpha only; retain a .glb.ao-backup and atomically replace the source'
+    bl_description = ('Write baked AO alpha back to the GLB loaded through this add-on, preserving RGB, '
+                      'geometry, UVs, hierarchy and animation. Keep the first original as .glb.ao-backup '
+                      'and reject externally changed files or edited source meshes')
 
     def run(self, context):
         settings = context.scene.glb_ao
@@ -211,6 +237,10 @@ class GLBAO_OT_save(SafeOperator, bpy.types.Operator):
 class GLBAO_OT_plate(SafeOperator, bpy.types.Operator, ExportHelper):
     bl_idname = 'glb_ao.bake_plate'
     bl_label = 'Bake AO Plate PNG'
+    bl_description = ('Bake the current model pose onto a ground plate using at least 1024 rays per texel. '
+                      'Save a black RGBA PNG with occlusion in alpha, transparent edges and footprint-based '
+                      'size, plus a JSON file with decal dimensions. Walk averaging and exploded positions '
+                      'are not used for plates')
     filename_ext = '.png'
     filter_glob: StringProperty(default='*.png', options={'HIDDEN'})
 
@@ -245,7 +275,25 @@ class GLBAO_OT_plate(SafeOperator, bpy.types.Operator, ExportHelper):
 class GLBAO_OT_preview(SafeOperator, bpy.types.Operator):
     bl_idname = 'glb_ao.preview'
     bl_label = 'Preview AO'
-    mode: EnumProperty(items=[('AO', 'AO Only', ''), ('SHADED', 'Shaded AO', ''), ('RESTORE', 'Restore Materials', '')])
+    bl_description = ('Inspect baked color alpha with temporary AO preview materials, '
+                      'or restore the original model materials')
+    mode: EnumProperty(items=[
+        ('AO', 'AO Only', 'Show baked color alpha as grayscale using temporary materials'),
+        ('SHADED', 'Shaded AO', 'Multiply baked alpha into copied Principled material base colors'),
+        ('RESTORE', 'Restore Materials', 'Restore material assignments saved before AO preview')])
+
+    @classmethod
+    def description(cls, context, properties):
+        if properties.mode == 'AO':
+            return ('Show the model\'s baked color alpha as grayscale: black is occluded, white is unoccluded. '
+                    'Use temporary emission materials and switch the viewport to Material Preview; '
+                    'Restore Materials returns the original assignments')
+        if properties.mode == 'SHADED':
+            return ('Preview baked AO by multiplying color alpha into copied Principled material base colors. '
+                    'Use grayscale AO for materials without a Principled shader and switch to Material '
+                    'Preview. Restore Materials returns the original assignments')
+        return ('Restore the model\'s material assignments from before AO preview and remove unused '
+                'temporary preview materials. Baked vertex alpha is retained')
 
     def run(self, context):
         settings = context.scene.glb_ao
@@ -259,7 +307,10 @@ class GLBAO_OT_preview(SafeOperator, bpy.types.Operator):
 class GLBAO_OT_export(SafeOperator, bpy.types.Operator, ExportHelper):
     bl_idname = 'glb_ao.export_new'
     bl_label = 'Export New GLB'
-    bl_description = 'Blender authoring export; updates to existing GLBs should use Update Source GLB'
+    bl_description = ('Export the model hierarchy through Blender\'s GLB exporter with +Y Up disabled, '
+                      'custom properties, tangents and the selected color attribute as COLOR_0. '
+                      'Restore preview materials first and exclude AO helper data. This regenerates '
+                      'the file; use Update Source GLB to preserve an originally loaded file')
     filename_ext = '.glb'
     filter_glob: StringProperty(default='*.glb', options={'HIDDEN'})
 
@@ -364,6 +415,7 @@ class GLBAO_PT_panel(bpy.types.Panel):
         box.label(text='Ground AO Plate')
         for name in ('footprint_x', 'footprint_y', 'resolution'):
             box.prop(settings, name)
+        box.prop(settings, 'samples')
         box.operator('glb_ao.bake_plate')
 
 

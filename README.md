@@ -1,5 +1,78 @@
 # OBJ2S3O
-Tools to convert Spring S3O models to OBJ format and back. Also, for baking Ambient Occlusion stuff.
+Tools for Spring/Recoil model conversion, inspection, and ambient occlusion (AO)
+baking. Includes the standalone **BAR GLB AO Baker** add-on for Blender 5.2+.
+
+## GLB ambient occlusion in Blender
+
+Use [BAR GLB AO Baker](blender_glb_ao/README.md) to bake vertex AO into
+**`COLOR_0` alpha** and generate RGBA ground AO plates. It supports existing GLBs
+and models authored in Blender, including walk-cycle averaging and skinned
+animation. Blender provides the dependencies; xNormal, S3O Kit, and Skeletor
+are not required for this add-on.
+
+From this repository's root, build the installable ZIP:
+
+```powershell
+python package_glb_ao.py
+```
+
+Install `dist/bar_glb_ao_v0.1.2.zip` through Blender's **Edit → Preferences →
+Add-ons → menu → Install from Disk**, enable **BAR GLB AO Baker**, and open
+the **GLB AO** tab in the 3D View sidebar (`N`). Restart Blender after updating
+an existing installation, then rebake to apply the current settings.
+
+1. Choose **File Axes** and **Load GLB for AO**, or select an existing Blender
+   model and click **Use Active Hierarchy**. Recoil GLBs exported with **+Y Up**
+   disabled use **Recoil / Blender Z Up**.
+2. Choose the unit type, ray settings, and optional walk range. Use **Mark
+   Explode** on pieces that should be separated while baking vertex AO.
+3. Click **Bake Vertex AO** and inspect the result with **AO Only** or
+   **Shaded AO**. **Restore Materials** returns the original materials.
+4. Use **Update Source GLB** to update the loaded file's color alpha while
+   preserving its geometry, RGB, UVs, hierarchy, and animations. It retains
+   the first original as `<model>.glb.ao-backup`. Use **Export New GLB** for
+   models authored or edited in Blender.
+5. For a ground plate, choose a footprint and 64×64 or 128×128 resolution,
+   then click **Bake AO Plate PNG**. This saves a black RGBA PNG with darkness
+   in alpha and a companion JSON file with the decal dimensions.
+
+Key conventions:
+
+- **Ray Samples** defaults to **1024** and cannot be set lower. The setting
+  applies to both vertex and plate AO; larger values round up to multiples
+  of 128 rays.
+- Vertices within **0.001 mesh-local Blender units** share averaged AO, even
+  across UV seams, hard normals, and material boundaries. Grouping uses
+  Euclidean distance on rest positions and is transitive within each mesh.
+  Positions and mesh topology are preserved.
+- Vertex alpha stores brightness (`0` occluded, `1` unoccluded). Plate alpha
+  stores darkness. Gain, bias, and minimum brightness are applied after
+  vertex AO averaging.
+- Walk sampling excludes the closing frame, which should repeat the first
+  pose. **Every Frame** includes intermediate poses; **Keyframes Only** is
+  available for faster sampling.
+- Footprint inputs use **16 world units per square**. Zero estimates from
+  model bounds. The square plate width is twice the larger footprint
+  dimension; a 3×3 footprint produces a 96×96 world-unit plate and decal
+  size values of 6×6.
+
+See the [add-on guide](blender_glb_ao/README.md) for Action selection, blockers,
+the `ao_explode` property, axis conventions, supported input, and preservation
+limits. Adding plates to BAR's atlas and consuming vertex alpha in a shader
+are separate game-integration steps.
+
+### Verify the GLB baker
+
+From this repository's root:
+
+```powershell
+python -m unittest discover -s tests -v
+& 'C:/Program Files/Blender Foundation/Blender 5.2/blender.exe' -b --factory-startup --python-exit-code 1 --python tests/blender_ao_integration.py
+```
+
+Adjust the Blender executable path for your installation. The integration
+suite uses temporary copies of `armanac.glb`, preserving the reference file,
+and checks real bakes, seams, animation, GLB updates, previews, and plate output.
 
 ## Inspect an S3O
 

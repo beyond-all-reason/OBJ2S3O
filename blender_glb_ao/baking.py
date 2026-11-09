@@ -6,6 +6,7 @@ Plate alpha balancing follows Beherith's OBJ2S3O baker.
 """
 from contextlib import contextmanager
 import hashlib
+from itertools import product
 import json
 import math
 import struct
@@ -18,6 +19,51 @@ from .glb import ID_ATTRIBUTE
 
 COLOR = 'COLOR_0'
 SCRATCH = '_BAR_AO_SCRATCH'
+MIN_RAYS = 1024
+AO_RAYS_PER_SAMPLE = 128
+POSITION_EPSILON = 0.001
+
+
+def position_groups(positions):
+    """Connected components of positions within epsilon Euclidean distance.
+
+    Spatial cells only find candidates: check neighboring cells as well, then
+    measure actual distance. Rounding coordinates alone would miss seams that
+    straddle cell boundaries or incorrectly merge diagonal neighbors.
+    """
+    unique, inverse = np.unique(positions, axis=0, return_inverse=True)
+    unique = unique.astype(np.float64)
+    # Mesh coordinates are float32. Represent the threshold at that same
+    # precision so a stored coordinate of 0.001 is included at the boundary.
+    epsilon = float(np.float32(POSITION_EPSILON))
+    distance_squared = epsilon * epsilon
+    parents = list(range(len(unique)))
+    cells = {}
+
+    def root(index):
+        while parents[index] != index:
+            parents[index] = parents[parents[index]]
+            index = parents[index]
+        return index
+
+    neighbors = tuple(product((-1, 0, 1), repeat=3))
+    for index, point in enumerate(unique):
+        cell = tuple(math.floor(coordinate / epsilon) for coordinate in point)
+        for offset in neighbors:
+            neighbor = tuple(c + d for c, d in zip(cell, offset))
+            for other in cells.get(neighbor, ()):
+                delta = point - unique[other]
+                if float(delta @ delta) <= distance_squared:
+                    a, b = root(index), root(other)
+                    parents[max(a, b)] = min(a, b)
+        cells.setdefault(cell, []).append(index)
+    groups = np.array([root(i) for i in range(len(unique))], dtype=np.intp)
+    return groups[inverse]
+
+
+def sample_budget(requested):
+    """The AO node caps at 128 rays; accumulate enough independent Cycles samples."""
+    return AO_RAYS_PER_SAMPLE, math.ceil(max(MIN_RAYS, requested) / AO_RAYS_PER_SAMPLE)
 
 
 def objects_for_model(context, settings):
@@ -94,6 +140,26 @@ def to_points(mesh, corner_values):
     return np.divide(sums, counts, out=np.ones_like(sums), where=counts != 0)
 
 
+def position_visibility(mesh, corner_values):
+    """One AO per epsilon-connected rest-position, including UV/normal splits.
+
+    Group source positions after temporal/instance averaging, before clamping.
+    Loose vertices do not brighten the samples from faces at the same position.
+    Keep separate meshes/pieces independent: their local origins and animation
+    can differ even when their local vertex coordinates happen to be identical.
+    """
+    positions = np.empty(len(mesh.vertices) * 3, dtype=np.float32)
+    mesh.vertices.foreach_get('co', positions)
+    groups = position_groups(positions.reshape((-1, 3)))
+    points = to_points(mesh, corner_values)
+    used = np.zeros(len(mesh.vertices), dtype=bool)
+    used[[loop.vertex_index for loop in mesh.loops]] = True
+    sums = np.bincount(groups[used], weights=points[used], minlength=len(mesh.vertices))
+    counts = np.bincount(groups[used], minlength=len(mesh.vertices))
+    mean = np.divide(sums, counts, out=np.ones_like(sums), where=counts != 0)
+    return mean[groups]
+
+
 def frames_for_bake(context, settings, targets):
     if not settings.walk:
         return [float(context.scene.frame_current) + context.scene.frame_subframe]
@@ -165,7 +231,10 @@ def bake_scene(context, settings):
     scene = bpy.data.scenes.new('_BAR_AO_BAKE')
     scene.render.engine = 'CYCLES'
     scene.cycles.device = 'CPU'
-    scene.cycles.samples = 1
+    ao_rays, cycles_samples = sample_budget(settings.samples)
+    scene.cycles.samples = cycles_samples
+    scene.cycles.use_adaptive_sampling = False
+    scene.cycles.time_limit = 0
     scene.cycles.use_denoising = False
     scene.render.bake.margin = 0
     scene.world = bpy.data.worlds.new('_BAR_AO_WORLD')
@@ -176,7 +245,7 @@ def bake_scene(context, settings):
     output = nodes.new('ShaderNodeOutputMaterial')
     emission = nodes.new('ShaderNodeEmission')
     ao = nodes.new('ShaderNodeAmbientOcclusion')
-    ao.samples = settings.samples
+    ao.samples = ao_rays
     ao.inputs['Distance'].default_value = settings.distance
     material.node_tree.links.new(ao.outputs['Color'], emission.inputs['Color'])
     material.node_tree.links.new(emission.outputs[0], output.inputs['Surface'])
@@ -336,9 +405,10 @@ def bake_vertex(context, settings):
             shared[mesh] = [sums / len(frames)]
     for mesh, samples in shared.items():
         raw = np.mean(samples, axis=0)
+        raw = position_visibility(mesh, raw)
         layer = color_layer(mesh, settings.color_attribute)
-        if layer.domain == 'POINT':
-            raw = to_points(mesh, raw)
+        if layer.domain == 'CORNER':
+            raw = raw[[loop.vertex_index for loop in mesh.loops]]
         alpha = np.clip(raw * settings.gain + settings.bias, settings.minimum, 1)
         rgba = np.empty(len(layer.data) * 4, dtype=np.float32)
         layer.data.foreach_get('color', rgba)
