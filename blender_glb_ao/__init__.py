@@ -2,10 +2,10 @@
 bl_info = {
     'name': 'BAR GLB AO Baker',
     'author': 'Beyond All Reason; based on ChrisFloofyKitsune and Beherith AO tooling',
-    'version': (0, 1, 2),
+    'version': (0, 2, 0),
     'blender': (5, 2, 0),
     'location': 'View3D > Sidebar > GLB AO',
-    'description': 'Bake vertex-color alpha AO and ground plates for GLB models',
+    'description': 'Bake vertex AO and ground plates; generate new Armada GLB wreck bundles',
     'category': 'Import-Export',
 }
 
@@ -13,13 +13,22 @@ import json
 from pathlib import Path
 import tempfile
 
+# Blender reloads the package on add-on updates, but caches its submodules.
+# Refresh helpers before binding classes and operators to the updated code.
+if 'bpy' in locals():
+    import importlib
+    from . import glb, baking, wreck_ui
+    importlib.reload(glb)
+    importlib.reload(baking)
+    importlib.reload(wreck_ui)
+
 import bpy
 from bpy.props import (BoolProperty, EnumProperty, FloatProperty, IntProperty,
                        PointerProperty, StringProperty)
 from bpy_extras.io_utils import ImportHelper, ExportHelper
 
 from .glb import GLB, ID_ATTRIBUTE
-from . import baking
+from . import baking, wreck_ui
 
 
 class GLBAOSettings(bpy.types.PropertyGroup):
@@ -53,9 +62,9 @@ class GLBAOSettings(bpy.types.PropertyGroup):
         ('FRAMES', 'Every Frame', 'Time average over every integer frame, excluding the closing pose'),
         ('KEYS', 'Keyframes Only', 'Equal-weight average of Action keys in the cycle')], default='FRAMES')
     footprint_x: IntProperty(name='Footprint X', default=0, min=0,
-                             description='16-unit gameplay squares; 0 estimates from model bounds')
+                             description='16-unit gameplay squares; 0 automatically fits this axis to the current model bounds')
     footprint_y: IntProperty(name='Footprint Z', default=0, min=0,
-                             description='16-unit gameplay squares; 0 estimates from model bounds')
+                             description='16-unit gameplay squares; 0 automatically fits this axis to the current model bounds')
     resolution: EnumProperty(name='Resolution', items=[('64', '64 × 64', ''), ('128', '128 × 128', '')], default='64')
 
 
@@ -234,12 +243,25 @@ class GLBAO_OT_save(SafeOperator, bpy.types.Operator):
         return {'FINISHED'}
 
 
+def default_plate_filepath(context):
+    settings = context.scene.glb_ao
+    width, depth = baking.current_plate_dimensions(context, settings)
+    source = settings.root.get('bar_ao_source')
+    name = Path(source).stem if source else bpy.path.clean_name(settings.root.name)
+    # Decal sizes describe the full plate in 16-unit squares, not its pixels
+    # or the unexpanded gameplay footprint. IntProperty footprints keep these
+    # values integral; .15g also avoids scientific notation for their full range.
+    filename = f'{name}_{width / 16:.15g}_{depth / 16:.15g}_aoplane.png'
+    destination = source or bpy.data.filepath
+    return str(Path(destination).with_name(filename)) if destination else filename
+
+
 class GLBAO_OT_plate(SafeOperator, bpy.types.Operator, ExportHelper):
     bl_idname = 'glb_ao.bake_plate'
     bl_label = 'Bake AO Plate PNG'
     bl_description = ('Bake the current model pose onto a ground plate using at least 1024 rays per texel. '
                       'Save a black RGBA PNG with occlusion in alpha, transparent edges and footprint-based '
-                      'size, plus a JSON file with decal dimensions. Walk averaging and exploded positions '
+                      'size in the suggested filename, plus a JSON file with decal dimensions. Walk averaging and exploded positions '
                       'are not used for plates')
     filename_ext = '.png'
     filter_glob: StringProperty(default='*.png', options={'HIDDEN'})
@@ -247,13 +269,17 @@ class GLBAO_OT_plate(SafeOperator, bpy.types.Operator, ExportHelper):
     def invoke(self, context, event):
         root = context.scene.glb_ao.root
         if root:
-            source = root.get('bar_ao_source')
-            name = Path(source).stem if source else root.name
-            self.filepath = str(Path(source).with_name(name + '_aoplane.png')) if source else name + '_aoplane.png'
+            try:
+                self.filepath = default_plate_filepath(context)
+            except Exception as error:
+                self.report({'ERROR'}, str(error))
+                return {'CANCELLED'}
         return ExportHelper.invoke(self, context, event)
 
     def run(self, context):
         settings = context.scene.glb_ao
+        if not self.filepath:
+            self.filepath = default_plate_filepath(context)
         width, depth = baking.bake_plate(context, settings, self.filepath)
         metadata = {
             'image': Path(self.filepath).name,
@@ -265,7 +291,7 @@ class GLBAO_OT_plate(SafeOperator, bpy.types.Operator, ExportHelper):
             'usebuildinggrounddecal': True,
             's3ocompat': baking.s3o_compatible(settings, context.scene),
             'uv_axes': 'engine +X, engine -Z',
-            'note': 'Add the PNG to the game AO atlas and set buildinggrounddecaltype to its atlas key. Do not additionally flip the source PNG.',
+            'note': 'Place size-named PNGs in unittextures/decals or unittextures/decals_features for automatic AO plate discovery. Custom filenames need explicit decal parameters. Do not additionally flip the source PNG.',
         }
         Path(self.filepath).with_suffix('.json').write_text(json.dumps(metadata, indent=2) + '\n', encoding='utf8')
         self.report({'INFO'}, f'Saved {width:g} × {depth:g} unit plate and decal-size JSON')
@@ -336,7 +362,7 @@ class GLBAO_OT_export(SafeOperator, bpy.types.Operator, ExportHelper):
         try:
             for owner in [context.scene, *objects, *(o.data for o in targets)]:
                 for name in list(owner.keys()):
-                    if name.startswith('bar_ao_'):
+                    if name.startswith(('bar_ao_', 'bar_wreck_')):
                         hidden_properties.append((owner, name, owner[name]))
             source_extras = json.loads(root.get('bar_ao_extras', '{}'))
             for name in ('tex1', 'tex2', 's3ocompat', 'midpos', 'mins', 'maxs', 'radius', 'height', 'fliptextures', 'invertteamcolor'):
@@ -350,7 +376,7 @@ class GLBAO_OT_export(SafeOperator, bpy.types.Operator, ExportHelper):
                 if obj.visible_get(view_layer=context.view_layer) and not obj.hide_render:
                     obj.select_set(True)
             result = bpy.ops.export_scene.gltf(
-                filepath=self.filepath, export_format='GLB', use_selection=True,
+                filepath=self.filepath, export_format='GLB', use_selection=True, use_active_scene=True,
                 export_yup=False, export_extras=True, export_tangents=True,
                 export_vertex_color='NAME', export_vertex_color_name=settings.color_attribute,
                 export_active_vertex_color_when_no_material=True, export_all_vertex_colors=False,
@@ -362,7 +388,8 @@ class GLBAO_OT_export(SafeOperator, bpy.types.Operator, ExportHelper):
             # from this NEW authoring export, without touching geometry.
             output = GLB.read(self.filepath)
             for scene in output.document.get('scenes', []):
-                scene.get('extras', {}).pop('glb_ao', None)
+                for name in ('glb_ao', 'glb_wreck'):
+                    scene.get('extras', {}).pop(name, None)
             Path(self.filepath).write_bytes(output.encode(output.document, output.binary))
         finally:
             for owner, name, value in hidden_properties:
@@ -428,9 +455,11 @@ def register():
     for cls in CLASSES:
         bpy.utils.register_class(cls)
     bpy.types.Scene.glb_ao = PointerProperty(type=GLBAOSettings)
+    wreck_ui.register()
 
 
 def unregister():
+    wreck_ui.unregister()
     for obj in list(bpy.data.objects):
         if obj.type == 'MESH' and obj.get('bar_ao_preview_slots') is not None:
             baking.restore_preview([obj])

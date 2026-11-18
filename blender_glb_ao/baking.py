@@ -450,6 +450,15 @@ def plate_dimensions(settings, bounds):
     return side, side
 
 
+def current_plate_dimensions(context, settings):
+    """Resolve the file-dialog dimensions without creating bake geometry."""
+    targets = objects_for_model(context, settings)
+    depsgraph = context.evaluated_depsgraph_get()
+    evaluated = [obj.evaluated_get(depsgraph) for obj in targets]
+    bounds = model_bounds(evaluated, model_frame(settings.root))
+    return plate_dimensions(settings, bounds)
+
+
 def plate_pixels(visibility, width, depth):
     """OBJ2S3O-style balancing, with zero alpha on every boundary pixel."""
     resolution = visibility.shape[0]

@@ -87,7 +87,7 @@ Plate baking uses the **current pose**. It ignores walk averaging, exploded posi
 - `resolution`: the **string** `'64'` or `'128'`. Respect an existing choice or requested size; use 128 for a large/high-detail plate when appropriate.
 - Full square plate width: `2 * max(footprint_x, footprint_y) * 16` after resolving automatic values. A 3×3 footprint produces 96×96 world units and decal-size values of 6×6.
 
-Resolve an output path before executing. Use the user's destination; otherwise derive `<blend-stem>_aoplane.png` beside the saved `.blend`, or a suitable workspace artifact path if the blend is unsaved. A plate request includes writing its PNG and companion JSON. Avoid an unrelated existing file; resolve an ambiguous overwrite before proceeding.
+Resolve an output path before executing. Use the user's destination; otherwise use `blender_glb_ao.default_plate_filepath(bpy.context)` with BAR GLB AO Baker 0.1.3 or later. It suggests `<model>_<x>_<z>_aoplane.png`, using full physical X/Z sizes divided by 16 (a 3×3 footprint becomes `_6_6_`). For older versions, calculate the same values from the resolved plate dimensions. Use a suitable workspace artifact path if the blend is unsaved. A plate request includes writing its PNG and companion JSON. Avoid an unrelated existing file; resolve an ambiguous overwrite before proceeding.
 
 ```python
 settings = scene.glb_ao

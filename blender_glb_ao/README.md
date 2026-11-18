@@ -4,7 +4,7 @@ Standalone Blender **5.2+** add-on for vertex ambient occlusion in **`COLOR_0` a
 
 ## Install
 
-Install `bar_glb_ao_v0.1.2.zip` using **Edit → Preferences → Add-ons → menu → Install from Disk**, then enable **BAR GLB AO Baker**. Open the 3D View sidebar (`N`) and select **GLB AO**.
+Install `bar_glb_ao_v0.2.0.zip` using **Edit → Preferences → Add-ons → menu → Install from Disk**, then enable **BAR GLB AO Baker**. Open the 3D View sidebar (`N`) and select **GLB AO**.
 
 When updating an existing installation, restart Blender after installing the ZIP so all add-on modules reload, then rebake models to apply the new ray minimum and shared-position AO.
 
@@ -15,7 +15,7 @@ python OBJ2S3O/package_glb_ao.py
 ```
 
 From the OBJ2S3O repository root, use `python package_glb_ao.py`. The ZIP is
-written to `dist/bar_glb_ao_v0.1.2.zip` within that repository.
+written to `dist/bar_glb_ao_v0.2.0.zip` within that repository.
 
 ## Blender MCP workflow skill
 
@@ -27,6 +27,22 @@ can be read directly by an agent using the available Blender MCP tools.
 
 Example workflow request: “Use the blender-glb-ao skill to bake vertex AO for
 the model in the open scene's Unit collection and show the AO preview.”
+
+## New Armada wreck generation
+
+Version 0.2.0 adds **Wreck Generation** inside the existing GLB AO panel. Set the
+meta-workspace and unit ID, inspect the matching UnitsV2 BOS, load the intact source
+in a separate scene, generate damage, then bake/export a wreck bundle. The canonical
+skill and helpers live in `BAR-Dev-MCP/skills/bar-generate-wrecks`; meta-workspace
+packages include a snapshot under the add-on's `skills` folder. The configured
+checkout takes precedence during iterative development.
+
+Inspection uses external Python 3.11+ with `pcpp`, or a supplied inspection JSON;
+Blender does not need compiler packages installed. Outputs are a separate editable
+blend, dead GLB, manifest and unapplied integration proposal. This version does not
+patch game definitions or shaders. The existing Armada PBR dead treatment is retained;
+continuous wreck-red material verification is a separate integration step, and alpha
+AO rendering remains deferred. Full procedures and current limits are in the skill.
 
 ## Existing GLB workflow
 
@@ -95,18 +111,20 @@ Select pieces and use **Mark Explode** to set Boolean object custom property **`
 
 Click **Bake AO Plate PNG** to bake the current pose without exploded pieces or a vertex-bake ground blocker. Walk averaging applies to vertex AO only.
 
-**Footprint X/Z** are gameplay footprint squares of 16 world units. Zero estimates the footprint from visible model bounds relative to the root origin. Estimates cannot recover gameplay footprint rules; enter explicit values when available. The square plate's full width is `2 * max(footprint_x, footprint_z) * 16`. Resolutions are 64×64 and 128×128.
+**Footprint X/Z** are gameplay footprint squares of 16 world units. Set either or both axes to **0** to automatically fit that axis to the visible model's evaluated bounds at the current pose, including root scale and offsets from its origin. Nonzero axes retain their explicit values. Estimates cannot recover gameplay footprint rules; enter explicit values when available. The square plate's full width is `2 * max(footprint_x, footprint_z) * 16` after resolving automatic values. Resolutions are 64×64 and 128×128.
 
 For example, a 3×3 footprint produces a 96×96 world-unit plate. The companion JSON reports `buildinggrounddecalsizex=6` and `buildinggrounddecalsizey=6`, matching the widget's 16-world-unit scale per decal-size value.
 
 Output consists of:
 
-- `<model>_aoplane.png`: black RGB, occlusion in alpha, faded to zero on all four edges.
-- `<model>_aoplane.json`: physical dimensions and corresponding `buildinggrounddecalsizex/y` values.
+- `<model>_<x>_<z>_aoplane.png`: black RGB, occlusion in alpha, faded to zero on all four edges.
+- `<model>_<x>_<z>_aoplane.json`: physical dimensions and corresponding `buildinggrounddecalsizex/y` values.
+
+The default filename uses full plate dimensions divided by 16, X then Z, including automatically estimated footprints. A 3×3 footprint suggests `<model>_6_6_aoplane.png`. Imported GLBs save beside their source; native models default beside the saved blend file. You can choose a different filename, and explicit operator `filepath` arguments are preserved.
 
 Plate alpha represents **darkness**, the inverse of vertex AO alpha. Balancing follows the old OBJ2S3O convention, including a maximum opacity of 223/255 before edge fading. PNG UVs follow engine `+X, -Z`; `s3ocompat=true` is handled with a 180-degree image rotation. Do not additionally flip the source PNG. The plate is centered on the model root and uses **Ground Height**.
 
-The game widget uses an atlas. Add the image to that atlas and configure the corresponding UnitDef decal parameters separately. This add-on does not modify BAR widgets, shaders, atlases, UnitDefs or engine code. Vertex-alpha AO requires a renderer that interprets that channel as AO; ordinary glTF material viewers do not give alpha this meaning.
+BAR's incremental AO widgets can discover size-named PNGs in `unittextures/decals` (units) or `unittextures/decals_features` (features). The model stem must match the model or definition name. Custom filenames require explicit decal parameters. This add-on does not modify game content. Vertex-alpha AO requires a renderer that interprets that channel as AO; ordinary glTF material viewers do not give alpha this meaning.
 
 ## Supported input and limits
 
@@ -132,6 +150,8 @@ The Blender suite uses temporary copies of `armanac.glb`; it does not update the
 
 ## Version history
 
+- **0.2.0:** add a Wreck Generation subpanel backed by the `bar-generate-wrecks` skill in BAR-Dev-MCP; generate separate editable scenes and GLB/blend/manifest bundles. Export only the active scene and exclude internal wreck settings. Game-definition application and continuous wreck-red material integration remain separate review steps; vertex-alpha AO rendering remains deferred.
+- **0.1.3:** include full X/Z decal sizes in default plate filenames, including automatic footprint estimates; preserve explicitly chosen paths.
 - **0.1.2:** use a 0.001 Euclidean position tolerance, including neighboring spatial cells and transitive groups; preserve shared AO across GLB material primitives.
 - **0.1.1:** enforce a 1024-ray minimum for vertex and plate baking, add complete button tooltips, and average AO at matching vertex positions across normal/UV seams.
 - **0.1.0:** initial standalone Blender 5.2+ add-on with vertex-alpha AO, animation averaging, previews, preserving GLB updates, and RGBA ground plates.
