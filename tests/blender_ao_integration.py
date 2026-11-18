@@ -1,18 +1,31 @@
 """Run with Blender 5.2 --background --factory-startup --python <this file>."""
 import hashlib
+import importlib
 import json
+import os
 from pathlib import Path
 import shutil
 import sys
 import tempfile
+from types import SimpleNamespace
+from unittest.mock import patch
 
 import bpy
 import numpy as np
 from mathutils import Matrix, Quaternion, Vector
 
 REPO = Path(__file__).resolve().parents[1]
+REFERENCE_GLB = Path(os.environ.get('BAR_AO_REFERENCE_GLB', REPO / 'armanac.glb'))
 sys.path.insert(0, str(REPO))
 import blender_glb_ao as addon
+
+# Reproduce an update with an older helper module still cached in Blender.
+del addon.baking.current_plate_dimensions
+importlib.reload(addon)
+assert callable(addon.baking.current_plate_dimensions)
+assert addon.GLB is addon.glb.GLB
+print('PASS: add-on reload refreshes cached helper modules')
+
 from blender_glb_ao import baking
 from blender_glb_ao.glb import GLB
 
@@ -98,7 +111,7 @@ settings.unit_type = 'FLYING'
 with tempfile.TemporaryDirectory(prefix='bar_ao_integration_') as folder:
     folder = Path(folder)
     source_path = folder / 'armanac.glb'
-    shutil.copy2(REPO / 'armanac.glb', source_path)
+    shutil.copy2(REFERENCE_GLB, source_path)
     original = GLB.read(source_path)
     root = addon.load_glb(bpy.context, source_path)
     targets = baking.objects_for_model(bpy.context, settings)
@@ -137,7 +150,7 @@ with tempfile.TemporaryDirectory(prefix='bar_ao_integration_') as folder:
         old_idx = original.document['meshes'][mi]['primitives'][pi]['attributes']['COLOR_0']
         new_idx = patched.document['meshes'][mi]['primitives'][pi]['attributes']['COLOR_0']
         assert [v[:3] for v in original.accessor(old_idx)] == [v[:3] for v in patched.accessor(new_idx)]
-    assert Path(str(source_path) + '.ao-backup').read_bytes() == (REPO / 'armanac.glb').read_bytes()
+    assert Path(str(source_path) + '.ao-backup').read_bytes() == REFERENCE_GLB.read_bytes()
     print('PASS: Cycles alpha bake, RGB preservation, color-only source update and backup')
 
     slots = {o: [(s.link, s.material) for s in o.material_slots] for o in targets}
@@ -150,6 +163,25 @@ with tempfile.TemporaryDirectory(prefix='bar_ao_integration_') as folder:
 
     settings.footprint_x = 3
     settings.footprint_y = 3
+    objects_before = set(bpy.data.objects)
+    selection_before = list(bpy.context.selected_objects)
+    active_before = bpy.context.view_layer.objects.active
+    suggested = SimpleNamespace(filepath='')
+    with patch.object(addon.ExportHelper, 'invoke', return_value={'RUNNING_MODAL'}):
+        assert addon.GLBAO_OT_plate.invoke(suggested, bpy.context, None) == {'RUNNING_MODAL'}
+    assert Path(suggested.filepath) == folder / 'armanac_6_6_aoplane.png'
+    assert set(bpy.data.objects) == objects_before
+    assert list(bpy.context.selected_objects) == selection_before
+    assert bpy.context.view_layer.objects.active == active_before
+    assert_clean(scene)
+    settings.footprint_x, settings.footprint_y = 2, 5
+    assert Path(addon.default_plate_filepath(bpy.context)).name == 'armanac_10_10_aoplane.png'
+    settings.footprint_x = 1000000
+    assert Path(addon.default_plate_filepath(bpy.context)).name == 'armanac_2000000_2000000_aoplane.png'
+    settings.footprint_x, settings.footprint_y = 3, 3
+    print('PASS: default plate filename includes full X/Z sizes without changing the source scene')
+
+    # An explicit path remains exactly as chosen, including its JSON stem.
     plate_path = folder / 'armanac_aoplane.png'
     assert bpy.ops.glb_ao.bake_plate(filepath=str(plate_path)) == {'FINISHED'}
     assert_clean(scene)
@@ -161,7 +193,22 @@ with tempfile.TemporaryDirectory(prefix='bar_ao_integration_') as folder:
     bpy.data.images.remove(image)
     metadata = json.loads(plate_path.with_suffix('.json').read_text())
     assert metadata['world_width'] == 96 and metadata['buildinggrounddecalsizex'] == 6
+    assert metadata['image'] == plate_path.name
     print('PASS: 64px RGBA plate, transparent edges, 16-unit decal sizing')
+
+    # A programmatic export without a filepath gets the same size-aware default,
+    # including inferred footprints. The filename must agree with the real bake.
+    settings.footprint_x = settings.footprint_y = 0
+    auto_path = Path(addon.default_plate_filepath(bpy.context))
+    assert bpy.ops.glb_ao.bake_plate(filepath='') == {'FINISHED'}
+    assert auto_path.is_file()
+    metadata = json.loads(auto_path.with_suffix('.json').read_text())
+    sx, sz = metadata['buildinggrounddecalsizex'], metadata['buildinggrounddecalsizey']
+    assert auto_path.name == f'armanac_{sx:.15g}_{sz:.15g}_aoplane.png'
+    assert metadata['image'] == auto_path.name
+    assert metadata['world_width'] == sx * 16 and metadata['world_depth'] == sz * 16
+    assert_clean(scene)
+    print('PASS: inferred default PNG/JSON filenames agree with the baked dimensions')
 
     new_path = folder / 'new.glb'
     assert bpy.ops.glb_ao.export_new(filepath=str(new_path)) == {'FINISHED'}
@@ -261,6 +308,27 @@ with tempfile.TemporaryDirectory(prefix='bar_ao_integration_') as folder:
     bpy.ops.mesh.primitive_cube_add(size=8, location=(12, 8, 4.1))
     obj = bpy.context.object
     obj.parent = root
+
+    # Each zero footprint axis is inferred independently, including offsets,
+    # negative coordinates and root scaling in world units at the current pose.
+    obj.location = (23, -11, 4.1)
+    root.location = (100, -200, 50)
+    root.rotation_euler.z = .37
+    root.scale = (2, 3, 1)
+    bpy.context.view_layer.update()
+    with baking.bake_scene(bpy.context, settings) as (temporary, material, original_scene):
+        copies, bounds = baking.evaluated_copies(bpy.context, temporary, material, [obj], root, explode=False)
+        for fx, fz, side in ((0, 0, 224), (0, 1, 224), (1, 0, 192), (1, 1, 32)):
+            settings.footprint_x, settings.footprint_y = fx, fz
+            assert baking.current_plate_dimensions(bpy.context, settings) == (side, side), (fx, fz)
+            assert baking.plate_dimensions(settings, bounds) == (side, side), (fx, fz)
+    assert_clean(scene)
+    obj.location = (12, 8, 4.1)
+    root.matrix_world = Matrix.Identity(4)
+    settings.footprint_x = settings.footprint_y = 0
+    bpy.context.view_layer.update()
+    print('PASS: zero X/Z footprints fit each axis independently using evaluated model bounds')
+
     centroids = []
     for compat in (False, True):
         scene['s3ocompat'] = compat

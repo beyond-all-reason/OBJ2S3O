@@ -16,7 +16,7 @@ From this repository's root, build the installable ZIP:
 python package_glb_ao.py
 ```
 
-Install `dist/bar_glb_ao_v0.1.2.zip` through Blender's **Edit → Preferences →
+Install `dist/bar_glb_ao_v0.1.3.zip` through Blender's **Edit → Preferences →
 Add-ons → menu → Install from Disk**, enable **BAR GLB AO Baker**, and open
 the **GLB AO** tab in the 3D View sidebar (`N`). Restart Blender after updating
 an existing installation, then rebake to apply the current settings.
@@ -34,7 +34,8 @@ an existing installation, then rebake to apply the current settings.
    models authored or edited in Blender.
 5. For a ground plate, choose a footprint and 64×64 or 128×128 resolution,
    then click **Bake AO Plate PNG**. This saves a black RGBA PNG with darkness
-   in alpha and a companion JSON file with the decal dimensions.
+   in alpha and a companion JSON file with the decal dimensions. The suggested
+   filename includes the full X/Z decal sizes, such as `model_6_6_aoplane.png`.
 
 Key conventions:
 
