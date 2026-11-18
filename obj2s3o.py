@@ -11,6 +11,7 @@ import os
 import png
 import argparse
 import glob
+import shutil
 
 from tooltip import Tooltip
 import subprocess
@@ -616,8 +617,21 @@ def clearAOS3O(filename,piecelist = [], zerolevel = 200):
 def delimit(str,a,b):
 	return str.partition(a)[2].partition(b)[0]
 
+def format_aoplane_dimension(value):
+	# GroundAOAtlas uses the full plate dimensions in 16-elmo units.
+	# Keep the spelling compact and stable for both integer and decimal sizes.
+	return format(value, '.15g')
+
+def aoplane_png_filename(basename, sizex, sizez):
+	return '{}_{}_{}_aoplane.png'.format(
+		basename,
+		format_aoplane_dimension(sizex),
+		format_aoplane_dimension(sizez))
+
 def bakeAOPlateS3O(filepath, xnormalpath, sizex = 5, sizez = 5, resolution= 128):
 	basename = filepath.rpartition('.')[0]
+	legacy_pngfile = basename + '_aoplane.png'
+	aoplane_pngfile = aoplane_png_filename(basename, sizex, sizez)
 	print ('=========================working on', basename, '===============================')
 	# check if the unit has a unitdef and if that unit is not a flying unit.
 	# also, make bigger plates for buildings :)
@@ -764,7 +778,7 @@ def bakeAOPlateS3O(filepath, xnormalpath, sizex = 5, sizez = 5, resolution= 128)
 	modifier=255 -int(modifier)
 	maxdarkness =32
 
-	outpngfilehandle = open(basename+'_aoplane.png','wb')
+	outpngfilehandle = open(aoplane_pngfile,'wb')
 	outpngwriter = png.Writer(width=w, height=h, alpha=True,greyscale=False)
 	outrows = []
 
@@ -799,9 +813,12 @@ def bakeAOPlateS3O(filepath, xnormalpath, sizex = 5, sizez = 5, resolution= 128)
 	outpngwriter.write(outpngfilehandle,outrows)
 	outpngfilehandle.close()
 
+	# Keep the legacy filename for the existing DDS atlas build while also
+	# providing the size-bearing PNG consumed by GroundAOAtlas.
+	shutil.copyfile(aoplane_pngfile, legacy_pngfile)
 
 	#--------------------- compress to dds------------------------
-	cmd='nvdxt -flip -dxt5 -quality_highest -overwrite -file "%s"'%(basename+"_aoplane.png")
+	cmd='nvdxt -flip -dxt5 -quality_highest -overwrite -file "%s"'%legacy_pngfile
 	print (cmd)
 	os.system(cmd)
 
@@ -1188,8 +1205,8 @@ parser.add_argument('--piecelist', nargs = '+', type = str, help =  'Piece list 
 parser.add_argument('--zerolevelao', type = int, help = 'Specify zero level for AO', default = 200)
 
 parser.add_argument('--bakeaoplate', action = "store_true", help = 'Bake an AO plate for the model') 
-parser.add_argument('--aoplatesizex', type = int, help = 'AO plate size X in footprint units', default = 5)
-parser.add_argument('--aoplatesizez', type = int, help = 'AO plate size Z in footprint units', default = 5)
+parser.add_argument('--aoplatesizex', type = float, help = 'AO plate full X size divided by 16', default = 5)
+parser.add_argument('--aoplatesizez', type = float, help = 'AO plate full Z size divided by 16', default = 5)
 parser.add_argument('--aoplateresolution', type = int, help = 'AO plate resolution in pixels', default = 128)
 parser.add_argument('--xnormalpath', type = str, help = 'Path to xnormal.exe', default = 'C:\\Program Files\\xNormal\\3.19.3\\x64\\xNormal.exe')
 
