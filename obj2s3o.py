@@ -290,12 +290,17 @@ class App:
 
 		Label(frame,wraplength=600, justify=LEFT, text ='Instructions and notes:\n1. Converting S3O to OBJ:\n Open an s3o file, and the obj file will be saved with the same name and an .obj extension\n The name of each object in the .obj file will reflect the naming and pieces of the s3o file. All s3o data is retained, and is listed as a series of parameters in the object\'s name.\nExample:\no base,ox=-0.00,oy=0.00,oz=0.00,p=,mx=-0.00,my=4.00,mz=0.00,r=17.50,h=21.00,t1=tex1.png,t2=tex2.png\n ALL s3o info is retained, including piece hierarchy, piece origins, smoothing groups, vertex normals, and even degenerate pieces with no geometry used as emit points and vectors. These emit pieces will be shown as triangles with their correct vertex ordering.\n2. Converting OBJ to S3O:\n The opened .obj file will be converted into s3o. If the piece names contain the information as specified in the above example, the entire model hierarchy will be correctly converted. If it doesnt, then the program will convert each object as a child piece of an empty base object.').pack(side=BOTTOM)
 
+	def openfiles(self, **kwargs):
+		selected = tkFileDialog.askopenfilename(initialdir=self.initialdir, **kwargs)
+		files = string2list(selected)
+		if files:
+			self.initialdir = os.path.dirname(os.path.abspath(files[0]))
+		return files
+
 	def openobj(self):
-		self.objfile = tkFileDialog.askopenfilename(initialdir= self.initialdir, filetypes = [('Object file','*.obj'),('Any file','*')],multiple = True)
-		self.objfile = string2list(self.objfile) 
+		self.objfile = self.openfiles(filetypes = [('Object file','*.obj'),('Any file','*')],multiple = True)
 		for file in self.objfile:
 			if 'obj' in file.lower():
-				self.initialdir=file.rpartition('/')[0]
 				if self.prompts3ofilename.get()==1:
 					outputfilename=tkFileDialog.asksaveasfilename(initialdir= self.initialdir,filetypes = [('Spring Model file (S3O)','*.s3o'),('Any file','*')])
 					if '.s3o' not in outputfilename.lower():
@@ -323,16 +328,9 @@ class App:
 			print ('[ERROR]','failed to load glb2s3o module:', e)
 			messagebox.showerror('GLB to S3O', 'Missing dependency for GLTF support.\nInstall it with: pip install pygltflib')
 			return
-		selected = tkFileDialog.askopenfilename(initialdir= self.initialdir, filetypes = [('glTF files','*.glb *.gltf'),('Any file','*')], multiple = True)
-		if isinstance(selected, (list, tuple)):
-			self.glbfile = list(selected)
-		elif selected:
-			self.glbfile = [selected]
-		else:
-			return
+		self.glbfile = self.openfiles(filetypes = [('glTF files','*.glb *.gltf'),('Any file','*')], multiple = True)
 		for file in self.glbfile:
 			if 'glb' in file.lower() or 'gltf' in file.lower():
-				self.initialdir=os.path.dirname(file)
 				if self.promptglbfilename.get()==1:
 					outputfilename=tkFileDialog.asksaveasfilename(initialdir= self.initialdir,filetypes = [('Spring Model file (S3O)','*.s3o'),('Any file','*')])
 					if '.s3o' not in outputfilename.lower():
@@ -346,11 +344,9 @@ class App:
 					messagebox.showerror('GLB to S3O', 'Failed to convert %s:\n%s' % (file, e))
 
 	def opens3o(self):
-		self.s3ofile = tkFileDialog.askopenfilename(initialdir= self.initialdir,filetypes = [('Spring Model file (S3O)','*.s3o'),('Any file','*')], multiple = True)
-		self.s3ofile = string2list(self.s3ofile) 
+		self.s3ofile = self.openfiles(filetypes = [('Spring Model file (S3O)','*.s3o'),('Any file','*')], multiple = True)
 		for file in self.s3ofile:
 			if 's3o' in file.lower():
-				self.initialdir=file.rpartition('/')[0]
 				if self.promptobjfilename.get()==1:
 					outputfilename=tkFileDialog.asksaveasfilename(initialdir= self.initialdir,filetypes = [('Object file','*.obj'),('Any file','*')])
 					if '.obj' not in outputfilename.lower():
@@ -360,16 +356,13 @@ class App:
 				S3OtoOBJ(file,outputfilename,self.optimize_for_wings3d.get()==1)
 
 	def optimizes3o(self):
-		self.s3ofile = tkFileDialog.askopenfilename(initialdir= self.initialdir,filetypes = [('Spring Model file (S3O)','*.s3o'),('Any file','*')], multiple = True)
-		self.s3ofile = string2list(self.s3ofile) 
+		self.s3ofile = self.openfiles(filetypes = [('Spring Model file (S3O)','*.s3o'),('Any file','*')], multiple = True)
 		for file in self.s3ofile:
 			if 's3o' in file.lower():
-				self.initialdir=file.rpartition('/')[0]
 				optimizeS3O(file)
 
 	def clearaos3o(self):
-		self.s3ofile = tkFileDialog.askopenfilename(initialdir= self.initialdir,filetypes = [('Spring Model file (S3O)','*.s3o'),('Any file','*')], multiple = True)
-		self.s3ofile = string2list(self.s3ofile)
+		self.s3ofile = self.openfiles(filetypes = [('Spring Model file (S3O)','*.s3o'),('Any file','*')], multiple = True)
 		piecelist = self.clearaopiecelist.get()
 		piecelist = piecelist.strip().lower().split(',')
 		if piecelist == ['']:
@@ -381,28 +374,25 @@ class App:
 				clearAOS3O(file, piecelist=piecelist, zerolevel=ao_zerolevel)
 
 	def printaos3o(self):
-		self.s3ofile = tkFileDialog.askopenfilename(initialdir= self.initialdir,filetypes = [('Spring Model file (S3O)','*.s3o'),('Any file','*')], multiple = True)
-		self.s3ofile = string2list(self.s3ofile)
+		self.s3ofile = self.openfiles(filetypes = [('Spring Model file (S3O)','*.s3o'),('Any file','*')], multiple = True)
 		piecelist = self.clearaopiecelist.get()
 		piecelist = piecelist.strip().lower().split(',')
 		ao_zerolevel = float(self.ao_zerolevel.get())
 		for file in self.s3ofile:
 			if 's3o' in file.lower():
-				self.initialdir=file.rpartition('/')[0]
 				print ('[INFO]','Clearing AO for',file,'piecelist:',piecelist)
 				printAOS3O(file)
 
 	def swaptex(self):
-		self.s3ofile = tkFileDialog.askopenfilename(initialdir= self.initialdir,filetypes = [('Spring Model file (S3O)','*.s3o'),('Any file','*')], multiple = True)
-		self.s3ofile = string2list(self.s3ofile) 
+		self.s3ofile = self.openfiles(filetypes = [('Spring Model file (S3O)','*.s3o'),('Any file','*')], multiple = True)
 		for file in self.s3ofile:
 			if 's3o' in file.lower():
-				self.initialdir=file.rpartition('/')[0]
 				swaptex(file,self.tex1.get(),self.tex2.get())
 
 	def getpiecelist(self):
-		self.s3ofile = tkFileDialog.askopenfilename(initialdir= self.initialdir,filetypes = [('Spring Model file (S3O)','*.s3o'),('Any file','*')], multiple = True)
-		self.s3ofile = string2list(self.s3ofile)
+		self.s3ofile = self.openfiles(filetypes = [('Spring Model file (S3O)','*.s3o'),('Any file','*')], multiple = True)
+		if not self.s3ofile:
+			return
 		datafile = open(
 		self.s3ofile[0], 'rb')
 		data = datafile.read()
@@ -417,10 +407,9 @@ class App:
 		self.ao_explodepieceslist.set(','.join(piecenamelist))
 
 	def bakeao(self):
-		self.s3ofile = tkFileDialog.askopenfilename(initialdir=self.initialdir,
-													filetypes=[('Spring Model file (S3O)', '*.s3o'), ('Any file', '*')],
-													multiple=True)
-		self.s3ofile = string2list(self.s3ofile)
+		self.s3ofile = self.openfiles(
+			filetypes=[('Spring Model file (S3O)', '*.s3o'), ('Any file', '*')],
+			multiple=True)
 		explodepiecelist = self.ao_explodepieceslist.get().strip().lower().split(',')
 		if explodepiecelist == ['']:
 			explodepiecelist = []
@@ -437,26 +426,28 @@ class App:
 						  explodepieces=explodepiecelist)
 
 	def bakeaoplate(self):
-		self.s3ofile = tkFileDialog.askopenfilename(initialdir=self.initialdir,
-													filetypes=[('Spring Model file (S3O)', '*.s3o'),
-															   ('Any file', '*')],
-													multiple=True)
-		self.s3ofile = string2list(self.s3ofile)
+		self.s3ofile = self.openfiles(
+			filetypes=[('Spring Model file (S3O)', '*.s3o'), ('Any file', '*')],
+			multiple=True)
 		for file in self.s3ofile:
 			if 's3o' in file.lower():
 				bakeAOPlateS3O(file,
 						  self.xnormalpath.get(),
-						  sizex=int(self.aoplate_xsize.get()),
-						  sizez=int(self.aoplate_zsize.get()),
+						  sizex=float(self.aoplate_xsize.get()),
+						  sizez=float(self.aoplate_zsize.get()),
 						  resolution=int(self.aoplate_rez.get()))
 
 def string2list(input_string):
-	if '{' not in input_string:# and input_string.count(':')>1:
-		return input_string
+	if isinstance(input_string, (list, tuple)):
+		return list(input_string)
+	if not input_string:
+		return []
+	if '{' not in input_string:
+		return [input_string]
 	input_string = input_string.lstrip('{')
 	input_string = input_string.rstrip('}')
 	output = input_string.split('} {')
-	return output
+	return [path for path in output if path]
 	
 def loadS3O(filename):
 	datafile=open(filename,'rb')
