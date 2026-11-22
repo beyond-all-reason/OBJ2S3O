@@ -15,7 +15,7 @@ GLB = MODULE_OBJECT.GLB
 
 
 def fixture(color_type='VEC4', component=5123, sparse=False):
-    # Interleaved color and unrelated bytes; original data must never change.
+    # Color and unrelated bytes; original data must never change.
     binary = bytearray(struct.pack('<9f', 0, 0, 0, 1, 0, 0, 0, 1, 0))
     document = {
         'asset': {'version': '2.0'}, 'buffers': [{'byteLength': 36}],
@@ -62,10 +62,45 @@ class ColorWriterTests(unittest.TestCase):
                     self.assertEqual([c[:3] for c in colors], [c[:3] for c in before])
                     self.assertAlmostEqual(colors[0][3], 0.25, delta=1 / 255)
                     self.assertEqual(colors[1][3], 1)
-                    self.assertTrue(output.binary.startswith(original.binary))
+                    self.assertEqual(output.document['meshes'][0]['primitives'][0]['attributes']['COLOR_0'], 1)
+                    if kind == 'VEC4':
+                        self.assertEqual(len(output.binary), len(original.binary))
+                    else:
+                        self.assertGreaterEqual(len(output.binary), len(original.binary))
                     self.assertEqual(original.chunks[-1], output.chunks[-1])
                     for key in ('nodes', 'scenes', 'animations', 'extensions'):
                         self.assertEqual(original.document[key], output.document[key])
+
+    def test_in_place_bake_removes_old_color_copy(self):
+        original = GLB(fixture('VEC4', 5123))
+        output = GLB(original.patched({0: 0.25, 2: 0.75}))
+        self.assertEqual(len(output.binary), len(original.binary))
+        self.assertEqual(len(output.document['accessors']), len(original.document['accessors']))
+        self.assertEqual(len(output.document['bufferViews']), len(original.document['bufferViews']))
+        self.assertEqual(output.accessor(1)[0][3], round(0.25 * 65535) / 65535)
+
+    def test_v3_bake_replaces_dedicated_color_stream(self):
+        original = GLB(fixture('VEC3', 5123))
+        output = GLB(original.patched({0: 0.25, 2: 0.75}))
+        self.assertEqual(output.document['meshes'][0]['primitives'][0]['attributes']['COLOR_0'], 1)
+        self.assertEqual(output.document['accessors'][1]['type'], 'VEC4')
+        self.assertEqual(output.accessor(1)[0][3], round(0.25 * 65535) / 65535)
+
+    def test_rebake_compacts_legacy_appended_color_stream(self):
+        original = GLB(fixture('VEC4', 5123))
+        legacy_document = copy.deepcopy(original.document)
+        legacy_binary = bytearray(original.binary)
+        rows = [tuple(round(value * 65535) for value in row) for row in original.accessor(1)]
+        legacy_index = GLB.append_accessor(legacy_document, legacy_binary, rows, 5123, 'VEC4', True)
+        legacy_document['meshes'][0]['primitives'][0]['attributes']['COLOR_0'] = legacy_index
+        legacy = GLB(original.encode(legacy_document, legacy_binary))
+        self.assertGreater(len(legacy.binary), len(original.binary))
+
+        output = GLB(legacy.patched({0: 0.25, 2: 0.75}))
+        self.assertEqual(len(output.binary), len(original.binary))
+        self.assertEqual(len(output.document['accessors']), len(original.document['accessors']))
+        self.assertEqual(len(output.document['bufferViews']), len(original.document['bufferViews']))
+        self.assertEqual(output.accessor(1)[0][3], round(0.25 * 65535) / 65535)
 
     def test_no_color_and_sparse_colors(self):
         for kind, sparse in ((None, False), ('VEC4', True)):
