@@ -2,10 +2,10 @@
 bl_info = {
     'name': 'BAR GLB AO Baker',
     'author': 'Beyond All Reason; based on ChrisFloofyKitsune and Beherith AO tooling',
-    'version': (0, 2, 0),
+    'version': (0, 3, 0),
     'blender': (5, 2, 0),
     'location': 'View3D > Sidebar > GLB AO',
-    'description': 'Bake vertex AO and ground plates; generate new Armada GLB wreck bundles',
+    'description': 'Bake vertex AO, ground plates and vehicle tracks; generate Armada GLB wreck bundles',
     'category': 'Import-Export',
 }
 
@@ -17,9 +17,11 @@ import tempfile
 # Refresh helpers before binding classes and operators to the updated code.
 if 'bpy' in locals():
     import importlib
-    from . import glb, baking, wreck_ui
+    from . import glb, baking, tracks, track_ui, wreck_ui
     importlib.reload(glb)
     importlib.reload(baking)
+    importlib.reload(tracks)
+    importlib.reload(track_ui)
     importlib.reload(wreck_ui)
 
 import bpy
@@ -28,7 +30,7 @@ from bpy.props import (BoolProperty, EnumProperty, FloatProperty, IntProperty,
 from bpy_extras.io_utils import ImportHelper, ExportHelper
 
 from .glb import GLB, ID_ATTRIBUTE
-from . import baking, wreck_ui
+from . import baking, tracks, track_ui, wreck_ui
 
 
 class GLBAOSettings(bpy.types.PropertyGroup):
@@ -65,7 +67,12 @@ class GLBAOSettings(bpy.types.PropertyGroup):
                              description='16-unit gameplay squares; 0 automatically fits this axis to the current model bounds')
     footprint_y: IntProperty(name='Footprint Z', default=0, min=0,
                              description='16-unit gameplay squares; 0 automatically fits this axis to the current model bounds')
-    resolution: EnumProperty(name='Resolution', items=[('64', '64 × 64', ''), ('128', '128 × 128', '')], default='64')
+    resolution: EnumProperty(name='Resolution', items=[
+        ('64', '64 × 64', 'Use 64 pixels per side', 0),
+        ('128', '128 × 128', 'Use 128 pixels per side', 1),
+        ('256', '256 × 256', 'Use 256 pixels per side', 2),
+        ('AUTO', 'Automatic', '128 pixels per side; 256 when both footprint axes are at least 8 squares', 3),
+    ], default='AUTO', description='Plate image size; Automatic uses the resolved gameplay footprint')
 
 
 class SafeOperator:
@@ -362,7 +369,7 @@ class GLBAO_OT_export(SafeOperator, bpy.types.Operator, ExportHelper):
         try:
             for owner in [context.scene, *objects, *(o.data for o in targets)]:
                 for name in list(owner.keys()):
-                    if name.startswith(('bar_ao_', 'bar_wreck_')):
+                    if name.startswith(('bar_ao_', 'bar_wreck_', 'bar_track_')):
                         hidden_properties.append((owner, name, owner[name]))
             source_extras = json.loads(root.get('bar_ao_extras', '{}'))
             for name in ('tex1', 'tex2', 's3ocompat', 'midpos', 'mins', 'maxs', 'radius', 'height', 'fliptextures', 'invertteamcolor'):
@@ -388,7 +395,7 @@ class GLBAO_OT_export(SafeOperator, bpy.types.Operator, ExportHelper):
             # from this NEW authoring export, without touching geometry.
             output = GLB.read(self.filepath)
             for scene in output.document.get('scenes', []):
-                for name in ('glb_ao', 'glb_wreck'):
+                for name in ('glb_ao', 'glb_wreck', 'glb_tracks'):
                     scene.get('extras', {}).pop(name, None)
             Path(self.filepath).write_bytes(output.encode(output.document, output.binary))
         finally:
@@ -455,11 +462,13 @@ def register():
     for cls in CLASSES:
         bpy.utils.register_class(cls)
     bpy.types.Scene.glb_ao = PointerProperty(type=GLBAOSettings)
+    track_ui.register()
     wreck_ui.register()
 
 
 def unregister():
     wreck_ui.unregister()
+    track_ui.unregister()
     for obj in list(bpy.data.objects):
         if obj.type == 'MESH' and obj.get('bar_ao_preview_slots') is not None:
             baking.restore_preview([obj])

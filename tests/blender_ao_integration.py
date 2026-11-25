@@ -66,6 +66,20 @@ bpy.ops.object.select_all(action='SELECT')
 bpy.ops.object.delete(use_global=False)
 settings = scene.glb_ao
 assert settings.samples == 1024
+assert settings.resolution == 'AUTO'
+resolution_items = settings.bl_rna.properties['resolution'].enum_items
+assert resolution_items['64'].value == 0 and resolution_items['128'].value == 1
+bounds = (Vector((-64, -64, 0)), Vector((64, 64, 1)))
+for fx, fz, expected in ((2, 2, 128), (7, 8, 128), (8, 7, 128), (8, 8, 256),
+                         (9, 12, 256), (0, 8, 256), (8, 0, 256), (0, 7, 128)):
+    settings.footprint_x, settings.footprint_y = fx, fz
+    assert baking.plate_resolution(settings, bounds) == expected, (fx, fz)
+for choice in ('64', '128', '256'):
+    settings.resolution = choice
+    assert baking.plate_resolution(settings, bounds) == int(choice)
+settings.footprint_x = settings.footprint_y = 0
+settings.resolution = 'AUTO'
+print('PASS: automatic plate resolution, independently inferred footprints and explicit overrides')
 settings.samples = 8
 assert settings.samples == 1024, 'Ray Samples must enforce the 1024 minimum'
 for requested in (0, 64, 1024, 1025, 4096):
@@ -186,7 +200,7 @@ with tempfile.TemporaryDirectory(prefix='bar_ao_integration_') as folder:
     assert bpy.ops.glb_ao.bake_plate(filepath=str(plate_path)) == {'FINISHED'}
     assert_clean(scene)
     image = bpy.data.images.load(str(plate_path), check_existing=False)
-    pixels = np.array(image.pixels[:]).reshape((64, 64, 4))
+    pixels = np.array(image.pixels[:]).reshape((128, 128, 4))
     assert np.all(pixels[:, :, :3] == 0)
     assert np.all(pixels[[0, -1], :, 3] == 0) and np.all(pixels[:, [0, -1], 3] == 0)
     assert pixels[:, :, 3].max() > 0.05
@@ -194,7 +208,18 @@ with tempfile.TemporaryDirectory(prefix='bar_ao_integration_') as folder:
     metadata = json.loads(plate_path.with_suffix('.json').read_text())
     assert metadata['world_width'] == 96 and metadata['buildinggrounddecalsizex'] == 6
     assert metadata['image'] == plate_path.name
-    print('PASS: 64px RGBA plate, transparent edges, 16-unit decal sizing')
+    print('PASS: automatic 128px RGBA plate, transparent edges, 16-unit decal sizing')
+
+    settings.footprint_x = settings.footprint_y = 8
+    large_path = folder / 'large_aoplane.png'
+    assert bpy.ops.glb_ao.bake_plate(filepath=str(large_path)) == {'FINISHED'}
+    image = bpy.data.images.load(str(large_path), check_existing=False)
+    assert tuple(image.size) == (256, 256)
+    bpy.data.images.remove(image)
+    metadata = json.loads(large_path.with_suffix('.json').read_text())
+    assert metadata['world_width'] == 256 and metadata['buildinggrounddecalsizex'] == 16
+    assert_clean(scene)
+    print('PASS: 8x8 footprint produces an automatic 256px plate')
 
     # A programmatic export without a filepath gets the same size-aware default,
     # including inferred footprints. The filename must agree with the real bake.

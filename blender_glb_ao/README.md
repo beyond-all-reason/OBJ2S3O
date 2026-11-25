@@ -1,10 +1,10 @@
 # BAR GLB AO Baker
 
-Standalone Blender **5.2+** add-on for vertex ambient occlusion in **`COLOR_0` alpha**, and black RGBA ground AO plates. No xNormal, S3O Kit, or Skeletor installation is required. Tested with Blender 5.2.1 LTS.
+Standalone Blender **5.2+** add-on for vertex ambient occlusion in **`COLOR_0` alpha**, black RGBA ground AO plates, vehicle-track textures and Armada wreck bundles. No xNormal, S3O Kit, or Skeletor installation is required. Tested with Blender 5.2.1 LTS.
 
 ## Install
 
-Install `bar_glb_ao_v0.2.0.zip` using **Edit → Preferences → Add-ons → menu → Install from Disk**, then enable **BAR GLB AO Baker**. Open the 3D View sidebar (`N`) and select **GLB AO**.
+Install `bar_glb_ao_v0.3.0.zip` using **Edit → Preferences → Add-ons → menu → Install from Disk**, then enable **BAR GLB AO Baker**. Open the 3D View sidebar (`N`) and select **GLB AO**.
 
 When updating an existing installation, restart Blender after installing the ZIP so all add-on modules reload, then rebake models to apply the new ray minimum and shared-position AO.
 
@@ -15,18 +15,66 @@ python OBJ2S3O/package_glb_ao.py
 ```
 
 From the OBJ2S3O repository root, use `python package_glb_ao.py`. The ZIP is
-written to `dist/bar_glb_ao_v0.2.0.zip` within that repository.
+written to `dist/bar_glb_ao_v0.3.0.zip` within that repository.
 
-## Blender MCP workflow skill
+## Vehicle track textures
 
-The reusable [blender-glb-ao skill](skills/blender-glb-ao/SKILL.md) instructs an
-agent with Blender MCP already available to identify the model root in `Unit`,
-bake vertex AO or ground plates, verify the result, and save/export when
-requested. The self-contained `SKILL.md` is included in the add-on ZIP and
-can be read directly by an agent using the available Blender MCP tools.
+Version 0.3.0 adds **Vehicle Track** inside the GLB AO panel. Load a GLB or choose
+the active hierarchy as Model Root. Set Ground Height (normally 0) and Contact
+Height (normally 1). The operator projects **all** visible evaluated geometry
+strictly below ground + contact height, retaining the lowest upward hit. It does
+not require separate tread pieces. Exactly one unit above ground is excluded.
 
-Example workflow request: “Use the blender-glb-ao skill to bake vertex AO for
-the model in the open scene's Unit collection and show the AO preview.”
+One output BMP contains the **full contact projection once**, with travel along
+image X and the across-track direction along image Y. The default artist gutter
+is **10% of the contact span on each Y side**. Height is fixed at **256 pixels**;
+width follows physical aspect, rounded to a whole pixel. The gutters initially
+have zero opacity. The longitudinal edges use a configurable joining collar;
+the unmodified raw contact mask is also saved.
+
+**Generate Vehicle Track BMP** writes a 24-bit Recoil data bitmap (R=brightness,
+G=opacity, B=0), raw contact PNG, single decoded RGBA PNG, separate tiled RGBA and
+soil-background previews, JSON recipe and proposed `.unitdef.lua` values.
+**Create Track Preview Scene** makes a separate scene containing evaluated model
+copies above three decoded repeats; render its camera to inspect it. It does not
+modify the original hierarchy, vertex AO, materials or source GLB.
+
+This first version uses contact geometry and subtle seeded soil breakup. It reads
+the imported GLB's `tex1`/`tex2` extras and queries external files throughout the
+source game's `unittextures/` tree. **Source Normal Map** records an optional
+verified normal path/hash; it is not sampled by this geometry-only variant.
+See the GLB reader used in `tests/blender_ao_integration.py`; `s3o_info.py` inspects
+legacy S3O, not GLB. A missing embedded image does not mean there is no referenced
+texture. Stout's references resolve to Armada T1 color/other and the rework suite's
+`unittextures/novelpbr/Armada_T1_Units_Normal.dds` (OpenGL green).
+
+The canonical workflow, source-material checks and UnitDef wiring are documented
+in `BAR-Dev-MCP/guides/ground-decals-tracks.md` and `ground-decals-inputs.md` in the
+meta-workspace. Copy only the encoded BMP into the game's `bitmaps/tracks/` and
+apply the proposed values to the exact runtime UnitDef when integration is wanted.
+`trackstretch=repeat_length/full_padded_width`; `trackstrength` controls lifetime.
+Off-center contacts need image recentering for integration because UnitDefs have
+no lateral track offset. Blender previews leave rendered BAR validation pending.
+
+From the meta-workspace, test math/encoding with `python -B -m unittest discover -s
+OBJ2S3O/tests -v` (NumPy required outside Blender), and run the real Stout trial:
+
+```powershell
+& 'C:/Program Files/Blender Foundation/Blender 5.2/blender.exe' --background --factory-startup --disable-autoexec --python-exit-code 1 --python OBJ2S3O/tests/blender_track_integration.py -- --output OBJ2S3O/dist/track_trial/armstump
+```
+
+The trial preserves the supplied private GLB and saves the recipe, authoring
+blend and separate rendered preview. Its output BMP is 185 × 256 for the current
+Stout contact geometry. No game texture or UnitDef is changed.
+
+## Blender MCP workflow
+
+Agent instructions are maintained in BAR-Dev-MCP's
+[Blender GLB AO guide](../../BAR-Dev-MCP/guides/blender-glb-ao.md) and its
+[skill entry point](../../BAR-Dev-MCP/skills/blender-glb-ao/SKILL.md).
+Fetch the guide with `bar_guides_get` using `name: blender-glb-ao`.
+The AO workflow skill is not stored in this repository or included in the
+add-on ZIP.
 
 ## New Armada wreck generation
 
@@ -111,7 +159,7 @@ Select pieces and use **Mark Explode** to set Boolean object custom property **`
 
 Click **Bake AO Plate PNG** to bake the current pose without exploded pieces or a vertex-bake ground blocker. Walk averaging applies to vertex AO only.
 
-**Footprint X/Z** are gameplay footprint squares of 16 world units. Set either or both axes to **0** to automatically fit that axis to the visible model's evaluated bounds at the current pose, including root scale and offsets from its origin. Nonzero axes retain their explicit values. Estimates cannot recover gameplay footprint rules; enter explicit values when available. The square plate's full width is `2 * max(footprint_x, footprint_z) * 16` after resolving automatic values. Resolutions are 64×64 and 128×128.
+**Footprint X/Z** are gameplay footprint squares of 16 world units. Set either or both axes to **0** to automatically fit that axis to the visible model's evaluated bounds at the current pose, including root scale and offsets from its origin. Nonzero axes retain their explicit values. Estimates cannot recover gameplay footprint rules; enter explicit values when available. The square plate's full width is `2 * max(footprint_x, footprint_z) * 16` after resolving automatic values. Resolution defaults to **Automatic**: 128×128 pixels, or 256×256 when both resolved footprint axes are at least 8 squares. Explicit 64×64, 128×128, and 256×256 options remain available. Existing saved scenes retain their explicit resolution; select Automatic to adopt the new default.
 
 For example, a 3×3 footprint produces a 96×96 world-unit plate. The companion JSON reports `buildinggrounddecalsizex=6` and `buildinggrounddecalsizey=6`, matching the widget's 16-world-unit scale per decal-size value.
 
@@ -150,6 +198,7 @@ The Blender suite uses temporary copies of `armanac.glb`; it does not update the
 
 ## Version history
 
+- **0.3.0:** add Vehicle Track contact projection, fixed 256-pixel image height, 10%-each-side artist gutters, deterministic Recoil BMP encoding, external material provenance, separate preview scenes and proposed UnitDef values. Footprint baking and material-normal transfer are not implemented.
 - **0.2.0:** add a Wreck Generation subpanel backed by the `bar-generate-wrecks` skill in BAR-Dev-MCP; generate separate editable scenes and GLB/blend/manifest bundles. Export only the active scene and exclude internal wreck settings. Game-definition application and continuous wreck-red material integration remain separate review steps; vertex-alpha AO rendering remains deferred.
 - **0.1.3:** include full X/Z decal sizes in default plate filenames, including automatic footprint estimates; preserve explicitly chosen paths.
 - **0.1.2:** use a 0.001 Euclidean position tolerance, including neighboring spatial cells and transitive groups; preserve shared AO across GLB material primitives.

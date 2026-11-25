@@ -4,11 +4,10 @@ import zipfile
 
 root = Path(__file__).resolve().parent
 package = root / 'blender_glb_ao'
-destination = root / 'dist' / 'bar_glb_ao_v0.2.0.zip'
+destination = root / 'dist' / 'bar_glb_ao_v0.3.0.zip'
 destination.parent.mkdir(exist_ok=True)
 with zipfile.ZipFile(destination, 'w', zipfile.ZIP_DEFLATED) as archive:
-    for name in ('__init__.py', 'glb.py', 'baking.py', 'wreck_ui.py', 'README.md', 'LICENSE',
-                 'skills/blender-glb-ao/SKILL.md'):
+    for name in ('__init__.py', 'glb.py', 'baking.py', 'tracks.py', 'track_ui.py', 'wreck_ui.py', 'README.md', 'LICENSE'):
         path = package / name
         archive.write(path, f'blender_glb_ao/{name}')
     # Canonical wreck workflow belongs to BAR-Dev-MCP. Include a portable snapshot

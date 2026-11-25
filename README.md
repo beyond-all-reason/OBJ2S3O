@@ -16,7 +16,7 @@ From this repository's root, build the installable ZIP:
 python package_glb_ao.py
 ```
 
-Install `dist/bar_glb_ao_v0.1.3.zip` through Blender's **Edit → Preferences →
+Install `dist/bar_glb_ao_v0.3.0.zip` through Blender's **Edit → Preferences →
 Add-ons → menu → Install from Disk**, enable **BAR GLB AO Baker**, and open
 the **GLB AO** tab in the 3D View sidebar (`N`). Restart Blender after updating
 an existing installation, then rebake to apply the current settings.
@@ -61,6 +61,10 @@ See the [add-on guide](blender_glb_ao/README.md) for Action selection, blockers,
 the `ao_explode` property, axis conventions, supported input, and preservation
 limits. Adding plates to BAR's atlas and consuming vertex alpha in a shader
 are separate game-integration steps.
+
+Agent workflows are maintained in the
+[BAR-Dev-MCP Blender GLB AO guide](../BAR-Dev-MCP/guides/blender-glb-ao.md),
+available through `bar_guides_get` with `name: blender-glb-ao`.
 
 ### Verify the GLB baker
 

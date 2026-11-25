@@ -440,14 +440,26 @@ def source_alpha(context, settings):
     return {i: sum(values) / len(values) for i, values in buckets.items()}
 
 
-def plate_dimensions(settings, bounds):
+def plate_footprint(settings, bounds):
     low, high = bounds
     # Footprint squares are 16 world units. Inferred extents include offsets
     # from the origin, because the widget cannot offset the plate center.
     fx = settings.footprint_x or max(1, math.ceil(2 * max(abs(low.x), abs(high.x)) / 16))
     fy = settings.footprint_y or max(1, math.ceil(2 * max(abs(low.y), abs(high.y)) / 16))
+    return fx, fy
+
+
+def plate_dimensions(settings, bounds):
+    fx, fy = plate_footprint(settings, bounds)
     side = 2 * max(fx, fy) * 16
     return side, side
+
+
+def plate_resolution(settings, bounds):
+    if settings.resolution != 'AUTO':
+        return int(settings.resolution)
+    fx, fy = plate_footprint(settings, bounds)
+    return 256 if fx >= 8 and fy >= 8 else 128
 
 
 def current_plate_dimensions(context, settings):
@@ -482,11 +494,11 @@ def bake_plate(context, settings, filepath):
         raise ValueError('Switch to Object Mode before baking')
     targets = objects_for_model(context, settings)
     image = None
-    resolution = int(settings.resolution)
     try:
         with bake_scene(context, settings) as (scene, material, original_scene):
             copies, bounds = evaluated_copies(context, scene, material, targets, settings.root, explode=False)
             width, depth = plate_dimensions(settings, bounds)
+            resolution = plate_resolution(settings, bounds)
             plane = add_plane(scene, material, model_frame(settings.root), width, depth, settings.ground_z)
             image = bpy.data.images.new('_BAR_AO_PLATE_IMAGE', width=resolution,
                                         height=resolution, alpha=True, is_data=True)
